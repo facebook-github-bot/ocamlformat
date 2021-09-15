@@ -224,7 +224,8 @@ let rec longident f = function
 
 let longident_loc f x = pp f "%a" longident x.txt
 
-let constant f = function
+let constant f x =
+  match x.pconst_desc with
   | Pconst_char i ->
       pp f "%C"  i
   | Pconst_string (i, _, None) ->
@@ -1093,6 +1094,7 @@ and with_constraint ctxt f = function
       pp f "module %a :=@ %a" longident_loc li longident_loc li2
   | Pwith_modtypesubst (li, mty) ->
       pp f "module type %a :=@ %a" longident_loc li (module_type ctxt) mty;
+
 
 and module_type1 ctxt f x =
   if x.pmty_attributes <> [] then module_type ctxt f x

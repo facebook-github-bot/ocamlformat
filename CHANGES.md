@@ -4,6 +4,10 @@
 
 #### Deprecated
 
+  + Options `--align-cases`, `--align-constructors-decl` and `--align-variants-decl` are now deprecated and will be removed by version 1.0 (#1793, @gpetiot)
+
+  + Option `disambiguate-non-breaking-match` is now deprecated and will be removed by version 1.0 (#1805, @gpetiot)
+
 #### Bug fixes
 
   + Fix normalization of sequences of expressions (#1731, @gpetiot)
@@ -24,6 +28,10 @@
 
   + Fix non stabilizing comments after infix operators (`*`, `%`, `#`-ops) (#1776, @gpetiot)
 
+  + Fix excessive break and wrong indentation after a short-open when `indicate-multiline-delimiters=closing-on-separate-line` (#1786, @gpetiot)
+
+  + Add parentheses around type alias used as type constraint (#1801, @gpetiot)
+
 #### Changes
 
   + Preserve bracketed lists in the Parsetree (#1694, @gpetiot)
@@ -40,6 +48,8 @@
   + Allow explicit binders for type variables (ocaml#10437) (#1757, @gpetiot)
 
   + Add a new `ocaml-version` option to select the version of OCaml syntax of the output (#1759, @gpetiot)
+
+  + Allow disambiguated global identifiers (like t/2) so they can be formatted by tools like OCaml-LSP (#1716, @let-def)
 
 ### 0.19.0 (2021-07-16)
 

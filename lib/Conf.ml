@@ -185,24 +185,29 @@ let ocaml_version_conv =
 module Formatting = struct
   let section = `Formatting
 
+  let removed_by_v1_0 = "It will be removed by version 1.0."
+
   let align_cases =
     let doc = "Align match/try cases vertically." in
     let names = ["align-cases"] in
-    C.flag ~default:false ~names ~doc ~section
+    let deprecated = C.deprecated ~since_version:"0.20.0" removed_by_v1_0 in
+    C.flag ~default:false ~names ~doc ~section ~deprecated
       (fun conf x -> {conf with align_cases= x})
       (fun conf -> conf.align_cases)
 
   let align_constructors_decl =
     let doc = "Align type declarations vertically." in
     let names = ["align-constructors-decl"] in
-    C.flag ~default:false ~names ~doc ~section
+    let deprecated = C.deprecated ~since_version:"0.20.0" removed_by_v1_0 in
+    C.flag ~default:false ~names ~doc ~section ~deprecated
       (fun conf x -> {conf with align_constructors_decl= x})
       (fun conf -> conf.align_constructors_decl)
 
   let align_variants_decl =
     let doc = "Align type variants declarations vertically." in
     let names = ["align-variants-decl"] in
-    C.flag ~default:false ~names ~doc ~section
+    let deprecated = C.deprecated ~since_version:"0.20.0" removed_by_v1_0 in
+    C.flag ~default:false ~names ~doc ~section ~deprecated
       (fun conf x -> {conf with align_variants_decl= x})
       (fun conf -> conf.align_variants_decl)
 
@@ -479,9 +484,10 @@ module Formatting = struct
     let doc =
       "Add parentheses around matching constructs that fit on a single line."
     in
+    let deprecated = C.deprecated ~since_version:"0.20.0" removed_by_v1_0 in
     C.flag
       ~names:["disambiguate-non-breaking-match"]
-      ~default:false ~doc ~section
+      ~default:false ~doc ~section ~deprecated
       (fun conf x -> {conf with disambiguate_non_breaking_match= x})
       (fun conf -> conf.disambiguate_non_breaking_match)
 
@@ -2244,7 +2250,9 @@ let update ?(quiet = false) c {attr_name= {txt; loc}; attr_payload; _} =
       | PStr
           [ { pstr_desc=
                 Pstr_eval
-                  ( { pexp_desc= Pexp_constant (Pconst_string (str, _, None))
+                  ( { pexp_desc=
+                        Pexp_constant
+                          {pconst_desc= Pconst_string (str, _, None); _}
                     ; pexp_attributes= []
                     ; _ }
                   , [] )
