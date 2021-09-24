@@ -9,94 +9,21 @@
 (*                                                                        *)
 (**************************************************************************)
 
-module Ast_helper = Ppxlib.Ast_helper
-
-module Parsetree = struct
-  include Ppxlib.Parsetree
-
-  let equal_core_type : core_type -> core_type -> bool = Poly.equal
-
-  let equal_structure : structure -> structure -> bool = Poly.equal
-
-  let equal_signature : signature -> signature -> bool = Poly.equal
-
-  let equal_toplevel_phrase : toplevel_phrase -> toplevel_phrase -> bool =
-    Poly.equal
-end
-
 module Asttypes = struct
-  include Ppxlib.Asttypes
+  include Asttypes
 
   let is_private = function Private -> true | Public -> false
 
-  let is_open = function Open -> true | Closed -> false
+  let is_open : closed_flag -> bool = function
+    | Open -> true
+    | Closed -> false
 
   let is_override = function Override -> true | Fresh -> false
 
   let is_mutable = function Mutable -> true | Immutable -> false
+
+  let is_recursive = function Recursive -> true | Nonrecursive -> false
 end
-
-module Mapper = struct
-  type 'a fragment =
-    | Structure : Parsetree.structure fragment
-    | Signature : Parsetree.signature fragment
-    | Use_file : Parsetree.toplevel_phrase list fragment
-
-  let equal (type a) (x : a fragment) : a -> a -> bool =
-    match x with
-    | Structure -> Parsetree.equal_structure
-    | Signature -> Parsetree.equal_signature
-    | Use_file -> List.equal Parsetree.equal_toplevel_phrase
-
-  let map_ast (type a) (x : a fragment) (m : Ppxlib.Ast_traverse.map) :
-      a -> a =
-    match x with
-    | Structure -> m#structure
-    | Signature -> m#signature
-    | Use_file -> m#list m#toplevel_phrase
-end
-
-module Parse = struct
-  let implementation = Ppxlib_ast.Parse.implementation
-
-  let interface = Ppxlib_ast.Parse.interface
-
-  let use_file lexbuf =
-    List.filter (Ppxlib_ast.Parse.use_file lexbuf)
-      ~f:(fun (p : Parsetree.toplevel_phrase) ->
-        match p with
-        | Ptop_def [] -> false
-        | Ptop_def (_ :: _) | Ptop_dir _ -> true)
-
-  let fragment (type a) (fragment : a Mapper.fragment) lexbuf : a =
-    match fragment with
-    | Mapper.Structure -> implementation lexbuf
-    | Mapper.Signature -> interface lexbuf
-    | Mapper.Use_file -> use_file lexbuf
-end
-
-module Printast = struct
-  let pp_sexp ppf sexp = Format.fprintf ppf "%a" (Sexp.pp_hum_indent 2) sexp
-
-  let sexp_of = Ppxlib.Ast_traverse.sexp_of
-
-  let implementation ppf x = pp_sexp ppf (sexp_of#structure x)
-
-  let interface ppf x = pp_sexp ppf (sexp_of#signature x)
-
-  let expression ppf x = pp_sexp ppf (sexp_of#expression x)
-
-  let payload ppf x = pp_sexp ppf (sexp_of#payload x)
-
-  let use_file ppf x = pp_sexp ppf (List.sexp_of_t sexp_of#toplevel_phrase x)
-
-  let fragment (type a) : a Mapper.fragment -> _ -> a -> _ = function
-    | Mapper.Structure -> implementation
-    | Mapper.Signature -> interface
-    | Mapper.Use_file -> use_file
-end
-
-module Pprintast = Ppxlib.Pprintast
 
 module Position = struct
   open Lexing
@@ -105,7 +32,7 @@ module Position = struct
 
   let column {pos_bol; pos_cnum; _} = pos_cnum - pos_bol
 
-  let fmt fs {pos_lnum; pos_bol; pos_cnum; _} =
+  let fmt fs {pos_lnum; pos_bol; pos_cnum; pos_fname= _} =
     if pos_lnum = -1 then Format.fprintf fs "[%d]" pos_cnum
     else Format.fprintf fs "[%d,%d+%d]" pos_lnum pos_bol (pos_cnum - pos_bol)
 
@@ -124,7 +51,7 @@ module Position = struct
 end
 
 module Location = struct
-  include Ppxlib.Location
+  include Location
 
   let fmt fs {loc_start; loc_end; loc_ghost} =
     Format.fprintf fs "(%a..%a)%s" Position.fmt loc_start Position.fmt
@@ -135,7 +62,13 @@ module Location = struct
 
   let sexp_of_t x = Sexp.Atom (to_string x)
 
-  let compare : t -> t -> int = Poly.compare
+  let compare {loc_start; loc_end; loc_ghost} b =
+    match Position.compare loc_start b.loc_start with
+    | 0 -> (
+      match Position.compare loc_end b.loc_end with
+      | 0 -> Bool.compare loc_ghost b.loc_ghost
+      | c -> c )
+    | c -> c
 
   type location = t
 
@@ -157,6 +90,8 @@ module Location = struct
 
   let compare_end_col x y = Position.compare_col x.loc_end y.loc_end
 
+  let line_difference fst snd = snd.loc_start.pos_lnum - fst.loc_end.pos_lnum
+
   let contains l1 l2 = compare_start l1 l2 <= 0 && compare_end l1 l2 >= 0
 
   let width x = Position.distance x.loc_start x.loc_end
@@ -175,78 +110,22 @@ module Location = struct
     let min a b = if width a < width b then a else b in
     List.reduce_exn (loc :: stack) ~f:min
 
-  module Set = struct
-    type t = (location, comparator_witness) Set.t
+  let of_lexbuf (lexbuf : Lexing.lexbuf) =
+    { loc_start= lexbuf.lex_start_p
+    ; loc_end= lexbuf.lex_curr_p
+    ; loc_ghost= false }
 
-    let empty =
-      Set.empty
-        ( module struct
-          type t = location
-
-          include Location_comparator
-        end )
-
-    let add key t = Set.add t key
-
-    let remove key t = Set.remove t key
-
-    let to_list t = Set.to_list t
-  end
-
-  module Multimap = struct
-    type 'a t = (location, 'a list, comparator_witness) Map.t
-
-    let add_list map key data = Map.add_exn map ~key ~data
-
-    let remove map loc = Map.remove map loc
-
-    let update_multi map ~src ~dst ~f =
-      Option.fold (Map.find map src) ~init:(Map.remove map src)
-        ~f:(fun new_map src_data ->
-          Map.update new_map dst ~f:(fun dst_data ->
-              Option.fold dst_data ~init:src_data ~f))
-
-    let empty =
-      Map.empty
-        ( module struct
-          type t = location
-
-          include Location_comparator
-        end )
-
-    let find map loc = Map.find map loc
-
-    let filter map ~f = Map.map map ~f:(List.filter ~f)
-
-    let mem map loc = Map.mem map loc
-
-    let to_list map = Map.to_alist map |> List.concat_map ~f:snd
-
-    let find_multi map loc = Map.find_multi map loc
-  end
+  let print ppf t =
+    Caml.Format.fprintf ppf "File \"%s\", line %d, characters %d-%d:"
+      t.loc_start.pos_fname t.loc_start.pos_lnum
+      (t.loc_start.pos_cnum - t.loc_start.pos_bol)
+      (t.loc_end.pos_cnum - t.loc_start.pos_bol)
 end
 
 module Longident = struct
-  type t = Longident.t =
-    | Lident of string
-    | Ldot of t * string
-    | Lapply of t * t
-
-  let flatten = Longident.flatten
-
-  let last = Longident.last
+  include Longident
 
   let lident s =
     assert (not (String.contains s '.')) ;
     Lident s
-end
-
-module Parser = Token_latest
-
-module Lexer = struct
-  let token lexbuf = Lexer.token lexbuf |> Token_latest.of_compiler_libs
-
-  type error = Lexer.error
-
-  exception Error = Lexer.Error
 end

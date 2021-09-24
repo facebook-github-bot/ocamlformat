@@ -11,7 +11,7 @@
 
 open Fmt
 open Odoc_parser.Ast
-module Location_ = Odoc_model.Location_
+module Loc = Odoc_parser.Loc
 
 type conf = {fmt_code: string -> (Fmt.t, unit) Result.t}
 
@@ -56,7 +56,7 @@ let str_normalized ?(escape = escape_all) s =
   |> List.filter ~f:(Fn.non String.is_empty)
   |> fun s -> list s "@ " (fun s -> escape s |> str)
 
-let ign_loc ~f with_loc = f with_loc.Location_.value
+let ign_loc ~f with_loc = f with_loc.Loc.value
 
 let fmt_verbatim_block s =
   let force_break = String.contains s '\n' in
@@ -67,9 +67,17 @@ let fmt_verbatim_block s =
   in
   hvbox 0 (wrap "{v" "v}" content)
 
-let fmt_code_block conf s =
-  match conf.fmt_code s with
-  | Ok formatted -> hvbox 0 (wrap "{[@;<1 2>" "@ ]}" formatted)
+let fmt_metadata s = str "@" $ str s
+
+let fmt_code_block conf s1 s2 =
+  let wrap_code x =
+    str "{"
+    $ opt s1 (ign_loc ~f:fmt_metadata)
+    $ fmt "[@;<1 2>" $ x $ fmt "@ ]}"
+  in
+  let s2 = Odoc_parser.Loc.value s2 in
+  match conf.fmt_code s2 with
+  | Ok formatted -> hvbox 0 (wrap_code formatted)
   | Error () ->
       let fmt_line ~first ~last:_ l =
         let l = String.rstrip l in
@@ -77,9 +85,11 @@ let fmt_code_block conf s =
         else if String.length l = 0 then str "\n"
         else fmt "@," $ str l
       in
-      let lines = String.split_lines s in
+      let lines = String.split_lines s2 in
       let box = match lines with _ :: _ :: _ -> vbox 0 | _ -> hvbox 0 in
-      box (wrap "{[@;<1 2>" "@ ]}" (vbox 0 (list_fl lines fmt_line)))
+      box (wrap_code (vbox 0 (list_fl lines fmt_line)))
+
+let fmt_code_span s = hovbox 0 (wrap "[" "]" (str (escape_brackets s)))
 
 let fmt_reference = ign_loc ~f:str_normalized
 
@@ -87,7 +97,7 @@ let fmt_reference = ign_loc ~f:str_normalized
 let list_should_use_heavy_syntax items =
   let heavy_nestable_block_elements = function
     (* More than one element or contains a list *)
-    | [{Location_.value= `List _; _}] | _ :: _ :: _ -> true
+    | [{Loc.value= `List _; _}] | _ :: _ :: _ -> true
     | [] | [_] -> false
   in
   List.exists items ~f:heavy_nestable_block_elements
@@ -105,21 +115,20 @@ let block_element_should_break elem next =
    depending on [block_element_should_break] *)
 let list_block_elem elems f =
   list_pn elems (fun ~prev:_ elem ~next ->
-      let elem = elem.Location_.value in
+      let elem = elem.Loc.value in
       let break =
         match next with
-        | Some {Location_.value= n; _}
+        | Some {Loc.value= n; _}
           when block_element_should_break
                  (elem :> block_element)
                  (n :> block_element) ->
             fmt "\n@\n"
         | Some _ -> fmt "@\n"
-        | None -> fmt ""
+        | None -> noop
       in
-      f elem $ break)
+      f elem $ break )
 
-let space_elt : inline_element with_location =
-  Location_.(at (span []) (`Space ""))
+let space_elt : inline_element with_location = Loc.(at (span []) (`Space ""))
 
 let rec fmt_inline_elements elements =
   let wrap_elements opn cls ~always_wrap hd = function
@@ -139,10 +148,7 @@ let rec fmt_inline_elements elements =
         $ str_normalized w $ aux t
     | `Space _ :: t -> fmt "@ " $ aux t
     | `Word w :: t -> str_normalized w $ aux t
-    | `Code_span s :: t ->
-        let s = escape_brackets s in
-        hovbox 0 (wrap "[" "]" (str_normalized ~escape:escape_brackets s))
-        $ aux t
+    | `Code_span s :: t -> fmt_code_span s $ aux t
     | `Raw_markup (lang, s) :: t ->
         let lang =
           match lang with
@@ -174,12 +180,12 @@ let rec fmt_inline_elements elements =
 
 and fmt_nestable_block_element c = function
   | `Paragraph elems -> fmt_inline_elements elems
-  | `Code_block s -> fmt_code_block c s
+  | `Code_block (s1, s2) -> fmt_code_block c s1 s2
   | `Verbatim s -> fmt_verbatim_block s
   | `Modules mods ->
       hovbox 0
         (wrap "{!modules:@," "@,}"
-           (list mods "@ " (fun ref -> fmt_reference ref)))
+           (list mods "@ " (fun ref -> fmt_reference ref)) )
   | `List (k, _syntax, items) when list_should_use_heavy_syntax items ->
       fmt_list_heavy c k items
   | `List (k, _syntax, items) -> fmt_list_light c k items
@@ -202,52 +208,48 @@ and fmt_list_light c kind items =
   in
   vbox 0 (list items "@," fmt_item)
 
-and fmt_nestable_block_elements c ?(prefix = noop) = function
-  | [] -> noop
-  | elems -> prefix $ list_block_elem elems (fmt_nestable_block_element c)
+and fmt_nestable_block_elements c elems =
+  list_block_elem elems (fmt_nestable_block_element c)
 
 let at = char '@'
 
 let space = fmt "@ "
 
-let fmt_tag_see c wrap sr txt =
-  at $ fmt "see@ "
-  $ wrap (str sr)
-  $ fmt_nestable_block_elements c ~prefix:space txt
+let fmt_tag_args ?arg ?txt c tag =
+  at $ str tag
+  $ opt arg (fun x -> char ' ' $ x)
+  $ opt txt (function
+      | [] -> noop
+      | x -> space $ hovbox 0 (fmt_nestable_block_elements c x) )
+
+let wrap_see = function
+  | `Url -> wrap "<" ">"
+  | `File -> wrap "'" "'"
+  | `Document -> wrap "\"" "\""
 
 let fmt_tag c = function
-  | `Author s -> at $ fmt "author@ " $ str s
-  | `Version s -> at $ fmt "version@ " $ str s
-  | `See (`Url, sr, txt) -> fmt_tag_see c (wrap "<" ">") sr txt
-  | `See (`File, sr, txt) -> fmt_tag_see c (wrap "'" "'") sr txt
-  | `See (`Document, sr, txt) -> fmt_tag_see c (wrap "\"" "\"") sr txt
-  | `Since s -> at $ fmt "since@ " $ str s
-  | `Before (s, txt) ->
-      at $ fmt "before@ " $ str s
-      $ fmt_nestable_block_elements c ~prefix:space txt
-  | `Deprecated txt ->
-      at $ fmt "deprecated" $ fmt_nestable_block_elements c ~prefix:space txt
-  | `Param (s, txt) ->
-      at $ fmt "param@ " $ str s
-      $ fmt_nestable_block_elements c ~prefix:space txt
-  | `Raise (s, txt) ->
-      at $ fmt "raise@ " $ str s
-      $ fmt_nestable_block_elements c ~prefix:space txt
-  | `Return txt ->
-      at $ fmt "return" $ fmt_nestable_block_elements c ~prefix:space txt
-  | `Inline -> at $ str "inline"
-  | `Open -> at $ str "open"
-  | `Closed -> at $ str "closed"
-  | `Canonical ref -> at $ fmt "canonical@ " $ fmt_reference ref
+  | `Author s -> fmt_tag_args c "author" ~arg:(str s)
+  | `Version s -> fmt_tag_args c "version" ~arg:(str s)
+  | `See (k, sr, txt) -> fmt_tag_args c "see" ~arg:(wrap_see k (str sr)) ~txt
+  | `Since s -> fmt_tag_args c "since" ~arg:(str s)
+  | `Before (s, txt) -> fmt_tag_args c "before" ~arg:(str s) ~txt
+  | `Deprecated txt -> fmt_tag_args c "deprecated" ~txt
+  | `Param (s, txt) -> fmt_tag_args c "param" ~arg:(str s) ~txt
+  | `Raise (s, txt) -> fmt_tag_args c "raise" ~arg:(str s) ~txt
+  | `Return txt -> fmt_tag_args c "return" ~txt
+  | `Inline -> fmt_tag_args c "inline"
+  | `Open -> fmt_tag_args c "open"
+  | `Closed -> fmt_tag_args c "closed"
+  | `Canonical ref -> fmt_tag_args c "canonical" ~arg:(fmt_reference ref)
 
 let fmt_block_element c = function
-  | `Tag tag -> hovbox 0 (fmt_tag c tag)
+  | `Tag tag -> hovbox 2 (fmt_tag c tag)
   | `Heading (lvl, lbl, elems) ->
       let lvl = Int.to_string lvl in
       let lbl =
         match lbl with
         | Some lbl -> str ":" $ str_normalized lbl
-        | None -> fmt ""
+        | None -> noop
       in
       let elems =
         if List.is_empty elems then elems else space_elt :: elems
@@ -256,7 +258,7 @@ let fmt_block_element c = function
   | #nestable_block_element as elm ->
       hovbox 0 (fmt_nestable_block_element c elm)
 
-let fmt ~fmt_code (docs : docs) =
+let fmt ~fmt_code (docs : t) =
   vbox 0 (list_block_elem docs (fmt_block_element {fmt_code}))
 
 let diff c x y =
@@ -267,6 +269,4 @@ let diff c x y =
   Set.symmetric_diff (norm x) (norm y)
 
 let is_tag_only =
-  List.for_all ~f:(function
-    | {Location_.value= `Tag _; _} -> true
-    | _ -> false)
+  List.for_all ~f:(function {Loc.value= `Tag _; _} -> true | _ -> false)

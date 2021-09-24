@@ -9,7 +9,8 @@
 (*                                                                        *)
 (**************************************************************************)
 
-type 'a with_comments = {ast: 'a; comments: Cmt.t list; prefix: string}
+type 'a with_comments =
+  {ast: 'a; comments: Cmt.t list; prefix: string; source: Source.t}
 
 module W : sig
   type t
@@ -26,7 +27,10 @@ end
 exception Warning50 of (Location.t * Warnings.t) list
 
 val parse :
-     'a Migrate_ast.Mapper.fragment
+     ?disable_w50:bool
+  -> ('b -> Lexing.lexbuf -> 'a)
+  -> 'b
   -> Conf.t
   -> source:string
   -> 'a with_comments
+(** @raise [Warning50] on misplaced documentation comments. *)

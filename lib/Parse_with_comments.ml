@@ -9,7 +9,10 @@
 (*                                                                        *)
 (**************************************************************************)
 
-type 'a with_comments = {ast: 'a; comments: Cmt.t list; prefix: string}
+open Migrate_ast
+
+type 'a with_comments =
+  {ast: 'a; comments: Cmt.t list; prefix: string; source: Source.t}
 
 module W = struct
   type t = int
@@ -26,36 +29,57 @@ end
 
 exception Warning50 of (Location.t * Warnings.t) list
 
-let parse fragment (conf : Conf.t) ~source =
-  let lexbuf = Lexing.from_string source in
-  let warnings =
-    W.enable 50
-    :: (if conf.quiet then List.map ~f:W.disable W.in_lexer else [])
+let tokens lexbuf =
+  let rec loop acc =
+    match Lexer.token_with_comments lexbuf with
+    (* The location in lexbuf are invalid for comments *)
+    | COMMENT (_, loc) as tok -> loop ((tok, loc) :: acc)
+    | DOCSTRING ds as tok -> loop ((tok, Docstrings.docstring_loc ds) :: acc)
+    | tok -> (
+        let loc = Location.of_lexbuf lexbuf in
+        let acc = (tok, loc) :: acc in
+        match tok with EOF -> List.rev acc | _ -> loop acc )
   in
-  Warnings.parse_options false (W.to_string warnings) ;
+  loop []
+
+let fresh_lexbuf source =
+  let lexbuf = Lexing.from_string source in
+  Location.init lexbuf !Location.input_name ;
   let hash_bang =
     Lexer.skip_hash_bang lexbuf ;
     let len = lexbuf.lex_last_pos in
     String.sub source ~pos:0 ~len
   in
-  Location.init lexbuf !Location.input_name ;
+  (lexbuf, hash_bang)
+
+let parse ?(disable_w50 = false) parse fragment (conf : Conf.t) ~source =
+  let warnings =
+    if conf.quiet then List.map ~f:W.disable W.in_lexer else []
+  in
+  let warnings = if disable_w50 then warnings else W.enable 50 :: warnings in
+  ignore @@ Warnings.parse_options false (W.to_string warnings) ;
   let w50 = ref [] in
   let t =
-    with_warning_filter
+    let lexbuf, hash_bang = fresh_lexbuf source in
+    Warning.with_warning_filter
       ~filter:(fun loc warn ->
-        match warn with
-        | Warnings.Bad_docstring _ when conf.comment_check ->
-            w50 := (loc, warn) :: !w50 ;
-            false
-        | _ -> not conf.quiet)
+        if Warning.is_unexpected_docstring warn && conf.comment_check then (
+          w50 := (loc, warn) :: !w50 ;
+          false )
+        else not conf.quiet )
       ~f:(fun () ->
-        let ast = Migrate_ast.Parse.fragment fragment lexbuf in
+        let ast = parse fragment lexbuf in
         Warnings.check_fatal () ;
         let comments =
           List.map
             ~f:(fun (txt, loc) -> Cmt.create txt loc)
             (Lexer.comments ())
         in
-        {ast; comments; prefix= hash_bang})
+        let tokens =
+          let lexbuf, _ = fresh_lexbuf source in
+          tokens lexbuf
+        in
+        let source = Source.create ~text:source ~tokens in
+        {ast; comments; prefix= hash_bang; source} )
   in
   match List.rev !w50 with [] -> t | w50 -> raise (Warning50 w50)

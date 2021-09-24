@@ -12,7 +12,7 @@
 (** Abstract syntax tree terms *)
 
 open Migrate_ast
-open Parsetree
+open Extended_ast
 
 val init : Conf.t -> unit
 (** Initialize internal state *)
@@ -20,6 +20,11 @@ val init : Conf.t -> unit
 module Attr : sig
   val is_doc : attribute -> bool
   (** Holds for docstrings, that are attributes of the form [(** ... *)]. *)
+end
+
+module Token : sig
+  val is_infix : Parser.token -> bool
+  (** Holds for infix symbols. *)
 end
 
 module String_id : sig
@@ -72,9 +77,6 @@ module Exp : sig
       operator of the form [let**] or [and**] where [**] can be 1 or more
       operator chars. *)
 
-  val is_sugared_list : expression -> bool
-  (** Holds for expressions that can be sugared into [\[e1; ...; eN\]] form. *)
-
   val exposed_left : expression -> bool
   (** [exposed_left exp] holds if the left-most subexpression of [exp] is a
       prefix operators. *)
@@ -104,18 +106,21 @@ module Indexing_op : sig
     ; loc: Location.t }
 
   val get_sugar :
-       Longident.t Location.loc
-    -> (Asttypes.arg_label * expression) list
-    -> t option
-  (** [get_sugar ident args] is [Some all] if [ident] is an indexing operator
-      and it's safe to use the sugar syntax, [None] otherwise. [args] should
-      be the arguments of the corresponding [Pexp_apply]. *)
+    expression -> (Asttypes.arg_label * expression) list -> t option
+  (** [get_sugar e args] is [Some all] if [e] is an identifier that is an
+      indexing operator and if the sugar syntax is already used in the
+      source, [None] otherwise. [args] should be the arguments of the
+      corresponding [Pexp_apply]. *)
 end
 
 val doc_atrs :
      ?acc:(string Location.loc * bool) list
   -> attributes
   -> (string Location.loc * bool) list option * attributes
+
+module Pat : sig
+  val is_simple : pattern -> bool
+end
 
 module Mod : sig
   val is_simple : module_expr -> bool
@@ -153,6 +158,8 @@ type t =
   | Mod of module_expr
   | Sig of signature_item
   | Str of structure_item
+  | Clf of class_field
+  | Ctf of class_type_field
   | Tli of toplevel_item
   | Top
 
@@ -251,3 +258,7 @@ val parenze_mty : module_type xt -> bool
 val parenze_mod : module_expr xt -> bool
 (** [parenze_mod xmod] holds when module_expr-in-context [xmod] should be
     parenthesized. *)
+
+val is_displaced_infix_op : expression xt -> bool
+(** [is_displaced_infix_op xexp] holds if an expression-in-context [xexp] is
+    an infix op that is not fully applied. *)

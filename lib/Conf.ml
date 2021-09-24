@@ -33,15 +33,11 @@ type t =
   ; disable: bool
   ; disambiguate_non_breaking_match: bool
   ; doc_comments: [`Before | `Before_except_val | `After_when_possible]
-  ; doc_comments_val: [`Before | `After | `Unset]
   ; doc_comments_padding: int
   ; doc_comments_tag_only: [`Fit | `Default]
   ; dock_collection_brackets: bool
-  ; escape_chars: [`Decimal | `Hexadecimal | `Preserve]
-  ; escape_strings: [`Decimal | `Hexadecimal | `Preserve]
   ; exp_grouping: [`Parens | `Preserve]
   ; extension_indent: int
-  ; extension_sugar: [`Preserve | `Always]
   ; field_space: [`Tight | `Loose | `Tight_decl]
   ; function_indent: int
   ; function_indent_nested: [`Always | `Auto | `Never]
@@ -55,7 +51,7 @@ type t =
   ; let_binding_indent: int
   ; let_binding_spacing: [`Compact | `Sparse | `Double_semicolon]
   ; let_module: [`Compact | `Sparse]
-  ; let_open: [`Preserve | `Auto | `Short | `Long]
+  ; line_endings: [`Lf | `Crlf]
   ; margin: int
   ; match_indent: int
   ; match_indent_nested: [`Always | `Auto | `Never]
@@ -63,6 +59,7 @@ type t =
   ; max_iters: int
   ; module_item_spacing: [`Compact | `Preserve | `Sparse]
   ; nested_match: [`Wrap | `Align]
+  ; ocaml_version: Ocaml_version.t
   ; ocp_indent_compat: bool
   ; parens_ite: bool
   ; parens_tuple: [`Always | `Multi_line_only]
@@ -91,7 +88,7 @@ let warn_raw, collect_warnings =
   let delayed_warning_list = ref [] in
   let warn_ s =
     if !delay_warning then delayed_warning_list := s :: !delayed_warning_list
-    else Format.eprintf "%s" s
+    else Format.eprintf "%s%!" s
   in
   let collect_warnings f =
     let old_flag, old_list = (!delay_warning, !delayed_warning_list) in
@@ -115,7 +112,7 @@ let warn ?filename ?lnum fmt =
         | Some file, None -> Format.asprintf "File %a@\n" Fpath.pp file
         | None, _ -> ""
       in
-      warn_raw (Format.asprintf "%sWarning: %s@\n" loc s))
+      warn_raw (Format.asprintf "%sWarning: %s@\n" loc s) )
     fmt
 
 module C = Config_option.Make (struct
@@ -176,26 +173,34 @@ let info =
   in
   Term.info "ocamlformat" ~version:Version.version ~doc ~man
 
+let ocaml_version_conv =
+  let parse x =
+    match Ocaml_version.of_string x with
+    | Ok x -> `Ok x
+    | Error (`Msg x) -> `Error x
+  in
+  (parse, Ocaml_version.pp)
+
 (** Options affecting formatting *)
 module Formatting = struct
   let section = `Formatting
 
   let align_cases =
-    let doc = "Align match/try cases horizontally." in
+    let doc = "Align match/try cases vertically." in
     let names = ["align-cases"] in
     C.flag ~default:false ~names ~doc ~section
       (fun conf x -> {conf with align_cases= x})
       (fun conf -> conf.align_cases)
 
   let align_constructors_decl =
-    let doc = "Align type declarations horizontally." in
+    let doc = "Align type declarations vertically." in
     let names = ["align-constructors-decl"] in
     C.flag ~default:false ~names ~doc ~section
       (fun conf x -> {conf with align_constructors_decl= x})
       (fun conf -> conf.align_constructors_decl)
 
   let align_variants_decl =
-    let doc = "Align type variants declarations horizontally." in
+    let doc = "Align type variants declarations vertically." in
     let names = ["align-variants-decl"] in
     C.flag ~default:false ~names ~doc ~section
       (fun conf x -> {conf with align_variants_decl= x})
@@ -409,7 +414,7 @@ module Formatting = struct
            ~msg:
              "It has been replaced by the new default `auto` value, which \
               breaks lines at newlines and wraps string literals at the \
-              margin.")
+              margin." )
       (fun conf x -> {conf with break_string_literals= x})
       (fun conf -> conf.break_string_literals)
 
@@ -510,65 +515,6 @@ module Formatting = struct
       (fun conf x -> {conf with doc_comments= x})
       (fun conf -> conf.doc_comments)
 
-  let doc_comments_val =
-    let doc =
-      "Documentation comments position on $(b,val) and $(b,external) \
-       declarations. $(b,Warning:) this option is $(b,deprecated) and will \
-       be removed in OCamlFormat v0.15.0."
-    in
-    let names = ["doc-comments-val"] in
-    let all =
-      [ ( "unset"
-        , `Unset
-        , "$(b,unset) lets $(b,doc-comments) set the position." )
-      ; ( "after"
-        , `After
-        , "$(b,after) puts documentation comments after their corresponding \
-           declarations." )
-      ; ("before", `Before, "$(b,before) puts them before.") ]
-    in
-    let deprecated =
-      C.deprecated ~since_version:"0.14.2"
-        "$(b,Warning:) this option is $(b,deprecated) and will be removed \
-         in OCamlFormat v0.15.0, please use `doc-comments` instead. If you \
-         are using `doc-comments-val=before` in combination with \
-         `doc-comments=before` then only `doc-comments=before` is now \
-         required to achive the same behavior. If you are using \
-         `doc-comments-val=before` in combination with `doc-comments=after` \
-         this behavior is not available anymore. If you are using \
-         `doc-comments-val=after` in combination with `doc-comments=before` \
-         please now use `doc-comments=before-except-val`. If you are using \
-         `doc-comments-val=after` in combination with `doc-comments=after` \
-         then only `doc-comments=after-when-possible` is now required to \
-         achieve the same behavior. If you are using \
-         `doc-comments-val=unset` the same behavior can now be achieved by \
-         setting `doc-comments` only."
-    in
-    C.choice ~names ~all ~doc ~section ~deprecated
-      ~removed_values:
-        [ C.removed_value ~name:"before" ~version:"0.14.2"
-            ~msg:
-              "If you are using `doc-comments-val=before` in combination \
-               with `doc-comments=before` then only `doc-comments=before` \
-               is now required to achive the same behavior. If you are \
-               using `doc-comments-val=before` in combination with \
-               `doc-comments=after` this behavior is not available anymore."
-        ; C.removed_value ~name:"after" ~version:"0.14.2"
-            ~msg:
-              "If you are using `doc-comments-val=after` in combination \
-               with `doc-comments=before` please now use \
-               `doc-comments=before-except-val`. If you are using \
-               `doc-comments-val=after` in combination with \
-               `doc-comments=after` then only \
-               `doc-comments=after-when-possible` is now required to \
-               achieve the same behavior."
-        ; C.removed_value ~name:"unset" ~version:"0.14.2"
-            ~msg:
-              "The same behavior can be achieved by setting `doc-comments` \
-               only." ]
-      (fun conf x -> {conf with doc_comments_val= x})
-      (fun conf -> conf.doc_comments_val)
-
   let doc_comments_padding =
     let docv = "PADDING" in
     let doc =
@@ -590,6 +536,25 @@ module Formatting = struct
       (fun conf x -> {conf with doc_comments_tag_only= x})
       (fun conf -> conf.doc_comments_tag_only)
 
+  let ( (* doc_comments_val *) ) =
+    let names = ["doc-comments-val"] in
+    let version = "0.16.0" in
+    let msg =
+      "If you are using `doc-comments-val=before` in combination with \
+       `doc-comments=before` then only `doc-comments=before` is now \
+       required to achive the same behavior. If you are using \
+       `doc-comments-val=before` in combination with `doc-comments=after` \
+       this behavior is not available anymore. If you are using \
+       `doc-comments-val=after` in combination with `doc-comments=before` \
+       please now use `doc-comments=before-except-val`. If you are using \
+       `doc-comments-val=after` in combination with `doc-comments=after` \
+       then only `doc-comments=after-when-possible` is now required to \
+       achieve the same behavior. If you are using `doc-comments-val=unset` \
+       the same behavior can now be achieved by setting `doc-comments` \
+       only."
+    in
+    C.removed_option ~names ~version ~msg
+
   let dock_collection_brackets =
     let doc =
       "Dock the brackets of lists, arrays and records, so that when the \
@@ -604,46 +569,17 @@ module Formatting = struct
   let concrete_syntax_preserved_msg =
     "Concrete syntax will now always be preserved."
 
-  let escape_chars =
-    let doc = "Escape encoding for character literals." in
+  let ( (* escape_chars *) ) =
     let names = ["escape-chars"] in
-    let all =
-      [ ( "preserve"
-        , `Preserve
-        , "$(b,preserve) escapes ASCII control codes but leaves the upper \
-           128 characters unchanged." )
-      ; ( "decimal"
-        , `Decimal
-        , "$(b,decimal) produces ASCII printable characters using decimal \
-           escape sequences as needed." )
-      ; ( "hexadecimal"
-        , `Hexadecimal
-        , "$(b,hexadecimal) mode escapes every character." ) ]
-    in
-    let deprecated =
-      C.deprecated ~since_version:"0.14.0" concrete_syntax_preserved_msg
-    in
-    C.choice ~names ~all ~doc ~section ~deprecated
-      (fun conf x -> {conf with escape_chars= x})
-      (fun conf -> conf.escape_chars)
+    let version = "0.16.0" in
+    let msg = concrete_syntax_preserved_msg in
+    C.removed_option ~names ~version ~msg
 
-  let escape_strings =
-    let doc =
-      "Escape encoding for string literals. See `--escape-chars` for the \
-       interpretation of the modes."
-    in
+  let ( (* escape_strings *) ) =
     let names = ["escape-strings"] in
-    let all =
-      [ ("preserve", `Preserve, "")
-      ; ("decimal", `Decimal, "")
-      ; ("hexadecimal", `Hexadecimal, "") ]
-    in
-    let deprecated =
-      C.deprecated ~since_version:"0.14.0" concrete_syntax_preserved_msg
-    in
-    C.choice ~names ~all ~doc ~section ~deprecated
-      (fun conf x -> {conf with escape_strings= x})
-      (fun conf -> conf.escape_strings)
+    let version = "0.16.0" in
+    let msg = concrete_syntax_preserved_msg in
+    C.removed_option ~names ~version ~msg
 
   let exp_grouping =
     let doc = "Style of expression grouping." in
@@ -671,16 +607,11 @@ module Formatting = struct
       (fun conf x -> {conf with extension_indent= x})
       (fun conf -> conf.extension_indent)
 
-  let extension_sugar =
-    let doc = "Extension formatting." in
+  let ( (* extension_sugar *) ) =
     let names = ["extension-sugar"] in
-    let all = [("preserve", `Preserve, ""); ("always", `Always, "")] in
-    let deprecated =
-      C.deprecated ~since_version:"0.14.0" concrete_syntax_preserved_msg
-    in
-    C.choice ~names ~all ~doc ~section ~deprecated
-      (fun conf x -> {conf with extension_sugar= x})
-      (fun conf -> conf.extension_sugar)
+    let version = "0.17.0" in
+    let msg = concrete_syntax_preserved_msg in
+    C.removed_option ~names ~version ~msg
 
   let field_space =
     let doc =
@@ -773,14 +704,14 @@ module Formatting = struct
     in
     let names = ["indicate-multiline-delimiters"] in
     let all =
-      [ ( "space"
-        , `Space
-        , "$(b,space) prints a space inside the delimiter to indicate the \
-           matching one is on a different line." )
-      ; ( "no"
+      [ ( "no"
         , `No
         , "$(b, no) doesn't do anything special to indicate the closing \
            delimiter." )
+      ; ( "space"
+        , `Space
+        , "$(b,space) prints a space inside the delimiter to indicate the \
+           matching one is on a different line." )
       ; ( "closing-on-separate-line"
         , `Closing_on_separate_line
         , "$(b, closing-on-separate-line) makes sure that the closing \
@@ -903,22 +834,21 @@ module Formatting = struct
       (fun conf x -> {conf with let_module= x})
       (fun conf -> conf.let_module)
 
-  let let_open =
-    let doc = "Module open formatting." in
+  let ( (* let_open *) ) =
+    let names = ["let-open"] in
+    let version = "0.17.0" in
+    let msg = concrete_syntax_preserved_msg in
+    C.removed_option ~names ~version ~msg
+
+  let line_endings =
+    let doc = "Line endings used." in
     let all =
-      [ ("preserve", `Preserve, "$(b,preserve) keeps the original style.")
-      ; ( "short"
-        , `Short
-        , "$(b,short) means the $(i,Module.(...)) style is used." )
-      ; ( "long"
-        , `Long
-        , "$(b,long) means the $(i,let open Module in (...)) style is used."
-        )
-      ; ("auto", `Auto, "$(b,auto) means the one fitting best is used.") ]
+      [ ("lf", `Lf, "$(b,lf) uses Unix line endings.")
+      ; ("crlf", `Crlf, "$(b,crlf) uses Windows line endings.") ]
     in
-    C.choice ~names:["let-open"] ~all ~doc ~section
-      (fun conf x -> {conf with let_open= x})
-      (fun conf -> conf.let_open)
+    C.choice ~names:["line-endings"] ~all ~doc ~allow_inline:false ~section
+      (fun conf x -> {conf with line_endings= x})
+      (fun conf -> conf.line_endings)
 
   let margin =
     let docv = "COLS" in
@@ -1013,6 +943,16 @@ module Formatting = struct
     C.choice ~names ~all ~doc ~section
       (fun conf x -> {conf with nested_match= x})
       (fun conf -> conf.nested_match)
+
+  let ocaml_version =
+    let docv = "V" in
+    let doc = "Version of OCaml syntax of the output." in
+    let default = Ocaml_version.sys_version in
+    let default_doc = "the version of OCaml used to build OCamlFormat" in
+    C.any ocaml_version_conv ~names:["ocaml-version"] ~default ~default_doc
+      ~doc ~docv ~section
+      (fun conf x -> {conf with ocaml_version= x})
+      (fun conf -> conf.ocaml_version)
 
   let ocp_indent_compat =
     let doc =
@@ -1215,7 +1155,8 @@ module Formatting = struct
       (fun conf -> conf.wrap_fun_args)
 end
 
-(* Flags that can be modified in the config file that don't affect formatting *)
+(* Flags that can be modified in the config file that don't affect
+   formatting *)
 
 let project_root_witness = [".git"; ".hg"; "dune-project"]
 
@@ -1257,7 +1198,7 @@ let enable_outside_detected_project =
   let witness =
     String.concat ~sep:" or "
       (List.map project_root_witness ~f:(fun name ->
-           Format.sprintf "$(b,%s)" name))
+           Format.sprintf "$(b,%s)" name ) )
   in
   let doc =
     Format.sprintf
@@ -1345,13 +1286,13 @@ let inputs =
   mk ~default
     Arg.(value & pos_all file_or_dash default & info [] ~doc ~docv ~docs)
 
-let kind : [`Impl | `Intf] option ref =
+let kind : Syntax.t option ref =
   let doc = "Parse file with unrecognized extension as an implementation." in
-  let impl = (Some `Impl, Arg.info ["impl"] ~doc ~docs) in
+  let impl = (Some Syntax.Use_file, Arg.info ["impl"] ~doc ~docs) in
   let doc = "Parse file with unrecognized extension as an interface." in
-  let intf = (Some `Intf, Arg.info ["intf"] ~doc ~docs) in
+  let intf = (Some Syntax.Signature, Arg.info ["intf"] ~doc ~docs) in
   let doc = "Deprecated. Same as $(b,impl)." in
-  let use_file = (Some `Impl, Arg.info ["use-file"] ~doc ~docs) in
+  let use_file = (Some Syntax.Use_file, Arg.info ["use-file"] ~doc ~docs) in
   let default = None in
   mk ~default Arg.(value & vflag default [impl; intf; use_file])
 
@@ -1372,6 +1313,20 @@ let name =
   mk ~default
     Arg.(value & opt (some string) default & info ["name"] ~doc ~docs ~docv)
 
+let numeric =
+  let doc =
+    "Instead of re-formatting the file, output one integer per line \
+     corresponding to the indentation value, printing as many values as \
+     lines in the range between lines X and Y (included)."
+  in
+  let default = None in
+  let docv = "X-Y" in
+  mk ~default
+    Arg.(
+      value
+      & opt (some (pair ~sep:'-' int int)) default
+      & info ["numeric"] ~doc ~docs ~docv)
+
 let ocp_indent_options =
   let unsupported ocp_indent = (ocp_indent, ([], "")) in
   let alias ocp_indent ocamlformat =
@@ -1386,7 +1341,7 @@ let ocp_indent_options =
       , Format.asprintf "$(b,%s) sets %a." ocp_indent
           (Format.pp_print_list
              ~pp_sep:(fun fs () -> Format.fprintf fs " and ")
-             (fun fs x -> Format.fprintf fs "$(b,%s)" x))
+             (fun fs x -> Format.fprintf fs "$(b,%s)" x) )
           l_ocamlformat ) )
   in
   [ alias "base" "let-binding-indent"
@@ -1416,7 +1371,7 @@ let ocp_indent_config =
         asprintf " %a"
           (pp_print_list
              ~pp_sep:(fun fs () -> fprintf fs "@ ")
-             (fun fs s -> fprintf fs "%s" s))
+             (fun fs s -> fprintf fs "%s" s) )
           l
     in
     asprintf "Read .ocp-indent configuration files.%s" supported
@@ -1436,23 +1391,6 @@ let output =
       value
       & opt (some string) default
       & info ["o"; "output"] ~doc ~docs ~docv)
-
-let format_invalid_files : [`Never | `Auto] option ref =
-  let doc =
-    "How invalid (unparsable) files are formatted. $(b,never) doesn't \
-     format invalid files and the parsing error will be printed. $(b,auto) \
-     will print invalid parts of the input as verbatim text. The default \
-     value is $(b,never). This option is experimental."
-  in
-  let docv = "{never|auto}" in
-  let never = ("never", `Never) in
-  let auto = ("auto", `Auto) in
-  let default = Some `Never in
-  mk ~default
-    Arg.(
-      value
-      & opt (some (enum [never; auto])) None
-      & info ["format-invalid-files"] ~doc ~docs ~docv)
 
 let print_config =
   let doc =
@@ -1511,15 +1449,11 @@ let ocamlformat_profile =
   ; disable= false
   ; disambiguate_non_breaking_match= false
   ; doc_comments= `Before_except_val
-  ; doc_comments_val= `Unset
   ; doc_comments_padding= 2
   ; doc_comments_tag_only= `Default
   ; dock_collection_brackets= false
-  ; escape_chars= `Preserve
-  ; escape_strings= `Preserve
   ; exp_grouping= `Parens
   ; extension_indent= 2
-  ; extension_sugar= `Preserve
   ; field_space= `Tight
   ; function_indent= 2
   ; function_indent_nested= `Never
@@ -1533,7 +1467,7 @@ let ocamlformat_profile =
   ; let_binding_indent= 2
   ; let_binding_spacing= `Compact
   ; let_module= `Compact
-  ; let_open= `Preserve
+  ; line_endings= `Lf
   ; margin= 80
   ; match_indent= 0
   ; match_indent_nested= `Never
@@ -1541,6 +1475,7 @@ let ocamlformat_profile =
   ; max_iters= 10
   ; module_item_spacing= `Sparse
   ; nested_match= `Wrap
+  ; ocaml_version= C.default Formatting.ocaml_version
   ; ocp_indent_compat= false
   ; parens_ite= false
   ; parens_tuple= `Always
@@ -1584,15 +1519,11 @@ let conventional_profile =
   ; disambiguate_non_breaking_match=
       C.default Formatting.disambiguate_non_breaking_match
   ; doc_comments= C.default Formatting.doc_comments
-  ; doc_comments_val= C.default Formatting.doc_comments_val
   ; doc_comments_padding= C.default Formatting.doc_comments_padding
   ; doc_comments_tag_only= C.default Formatting.doc_comments_tag_only
   ; dock_collection_brackets= C.default Formatting.dock_collection_brackets
-  ; escape_chars= C.default Formatting.escape_chars
-  ; escape_strings= C.default Formatting.escape_strings
   ; exp_grouping= C.default Formatting.exp_grouping
   ; extension_indent= C.default Formatting.extension_indent
-  ; extension_sugar= C.default Formatting.extension_sugar
   ; field_space= C.default Formatting.field_space
   ; function_indent= C.default Formatting.function_indent
   ; function_indent_nested= C.default Formatting.function_indent_nested
@@ -1609,7 +1540,7 @@ let conventional_profile =
   ; let_binding_indent= C.default Formatting.let_binding_indent
   ; let_binding_spacing= C.default Formatting.let_binding_spacing
   ; let_module= C.default Formatting.let_module
-  ; let_open= C.default Formatting.let_open
+  ; line_endings= C.default Formatting.line_endings
   ; margin= C.default Formatting.margin
   ; match_indent= C.default Formatting.match_indent
   ; match_indent_nested= C.default Formatting.match_indent_nested
@@ -1617,6 +1548,7 @@ let conventional_profile =
   ; max_iters= C.default max_iters
   ; module_item_spacing= C.default Formatting.module_item_spacing
   ; nested_match= C.default Formatting.nested_match
+  ; ocaml_version= C.default Formatting.ocaml_version
   ; ocp_indent_compat= C.default Formatting.ocp_indent_compat
   ; parens_ite= C.default Formatting.parens_ite
   ; parens_tuple= C.default Formatting.parens_tuple
@@ -1635,6 +1567,8 @@ let conventional_profile =
   ; type_decl_indent= C.default Formatting.type_decl_indent
   ; wrap_comments= C.default Formatting.wrap_comments
   ; wrap_fun_args= C.default Formatting.wrap_fun_args }
+
+let default_profile = conventional_profile
 
 let compact_profile =
   { ocamlformat_profile with
@@ -1714,15 +1648,11 @@ let janestreet_profile =
   ; disable= false
   ; disambiguate_non_breaking_match= false
   ; doc_comments= `Before
-  ; doc_comments_val= `Unset
   ; doc_comments_padding= 1
   ; doc_comments_tag_only= `Fit
   ; dock_collection_brackets= false
-  ; escape_chars= `Preserve
-  ; escape_strings= `Preserve
   ; exp_grouping= `Parens
   ; extension_indent= 2
-  ; extension_sugar= `Preserve
   ; field_space= `Loose
   ; function_indent= 2
   ; function_indent_nested= `Never
@@ -1736,7 +1666,7 @@ let janestreet_profile =
   ; let_binding_indent= 2
   ; let_binding_spacing= `Double_semicolon
   ; let_module= `Sparse
-  ; let_open= `Preserve
+  ; line_endings= `Lf
   ; margin= 90
   ; match_indent= 0
   ; match_indent_nested= `Never
@@ -1744,6 +1674,7 @@ let janestreet_profile =
   ; max_iters= ocamlformat_profile.max_iters
   ; module_item_spacing= `Compact
   ; nested_match= `Wrap
+  ; ocaml_version= C.default Formatting.ocaml_version
   ; ocp_indent_compat= true
   ; parens_ite= true
   ; parens_tuple= `Multi_line_only
@@ -1763,7 +1694,7 @@ let janestreet_profile =
   ; wrap_comments= false
   ; wrap_fun_args= false }
 
-let selected_profile_ref = ref (Some conventional_profile)
+let selected_profile_ref = ref (Some default_profile)
 
 let (_profile : t option C.t) =
   let doc =
@@ -1777,7 +1708,7 @@ let (_profile : t option C.t) =
       , "The $(b,conventional) profile aims to be as familiar and \
          \"conventional\" appearing as the available options allow." )
     ; ( "default"
-      , Some conventional_profile
+      , Some default_profile
       , "$(b,default) is an alias for the $(b,conventional) profile." )
     ; ( "compact"
       , Some compact_profile
@@ -1814,7 +1745,7 @@ let (_profile : t option C.t) =
       selected_profile_ref := p ;
       let new_conf = Option.value p ~default:conf in
       (* The quiet option is cummulative *)
-      {new_conf with quiet= new_conf.quiet || conf.quiet})
+      {new_conf with quiet= new_conf.quiet || conf.quiet} )
     (fun _ -> !selected_profile_ref)
 
 let ocp_indent_normal_profile =
@@ -1877,7 +1808,7 @@ let parse_line config ~from s =
             (`Bad_value
               ( name
               , Format.sprintf "expecting %S but got %S" Version.version
-                  value ))
+                  value ) )
     | name, `File x ->
         C.update ~config ~from:(`Parsed (`File x)) ~name ~value ~inline:false
     | name, `Attribute ->
@@ -1929,7 +1860,7 @@ let parse_line config ~from s =
         Result.( >>= )
           (update ~config ~from ~name:"profile" ~value:"janestreet")
           (fun config ->
-            update_many ~config ~from ocp_indent_janestreet_profile)
+            update_many ~config ~from ocp_indent_janestreet_profile )
     | name -> update ~config ~from ~name ~value:"true" )
   | _ -> Error (`Malformed s)
 
@@ -1938,7 +1869,7 @@ let is_project_root ~root dir =
   | Some root -> Fpath.equal dir root
   | None ->
       List.exists project_root_witness ~f:(fun name ->
-          Fpath.(exists (dir / name)))
+          Fpath.(exists (dir / name)) )
 
 let dot_ocp_indent = ".ocp-indent"
 
@@ -1948,16 +1879,16 @@ let dot_ocamlformat_ignore = ".ocamlformat-ignore"
 
 let dot_ocamlformat_enable = ".ocamlformat-enable"
 
-let rec collect_files ~enable_outside_detected_project ~root ~segs ~ignores
-    ~enables ~files =
+let rec collect_files ~enable_outside_detected_project ~root ~volume ~segs
+    ~ignores ~enables ~files =
   match segs with
   | [] | [""] -> (ignores, enables, files, None)
   | "" :: upper_segs ->
-      collect_files ~enable_outside_detected_project ~root ~segs:upper_segs
-        ~ignores ~enables ~files
+      collect_files ~enable_outside_detected_project ~root ~volume
+        ~segs:upper_segs ~ignores ~enables ~files
   | _ :: upper_segs ->
       let sep = Fpath.dir_sep in
-      let dir = String.concat ~sep (List.rev segs) |> Fpath.v in
+      let dir = Fpath.v (volume ^ String.concat ~sep (List.rev segs)) in
       let ignores =
         let filename = Fpath.(dir / dot_ocamlformat_ignore) in
         if Fpath.exists filename then filename :: ignores else ignores
@@ -1977,8 +1908,8 @@ let rec collect_files ~enable_outside_detected_project ~root ~segs ~ignores
       if is_project_root ~root dir && not enable_outside_detected_project
       then (ignores, enables, files, Some dir)
       else
-        collect_files ~enable_outside_detected_project ~root ~segs:upper_segs
-          ~ignores ~enables ~files
+        collect_files ~enable_outside_detected_project ~root ~volume
+          ~segs:upper_segs ~ignores ~enables ~files
 
 exception Conf_error of string
 
@@ -2005,7 +1936,7 @@ let read_config_file conf filename_kind =
                     warn ~filename ~lnum:num "ignoring invalid options %S"
                       line ;
                     (conf, errors, Int.succ num)
-                | Error e -> (conf, e :: errors, Int.succ num))
+                | Error e -> (conf, e :: errors, Int.succ num) )
           in
           match List.rev errors with
           | [] -> c
@@ -2015,7 +1946,7 @@ let read_config_file conf filename_kind =
                 | `Ocp_indent _ -> dot_ocp_indent
                 | `Ocamlformat _ -> dot_ocamlformat
               in
-              failwith_user_errors ~kind l)
+              failwith_user_errors ~kind l )
     with Sys_error _ -> conf )
 
 let update_using_env conf =
@@ -2078,19 +2009,20 @@ let is_in_listing_file ~listings ~filename =
                         None )
                 | Error (`Msg msg) ->
                     warn ~filename:listing_file ~lnum:lno "%s" msg ;
-                    None))
+                    None ) )
       with Sys_error err ->
         warn "ignoring %a, %s" Fpath.pp listing_file err ;
-        None)
+        None )
 
 let build_config ~enable_outside_detected_project ~root ~file ~is_stdin =
   let vfile = Fpath.v file in
   let file_abs = Fpath.(vfile |> to_absolute |> normalize) in
   let dir = Fpath.(file_abs |> split_base |> fst) in
+  let volume, dir = Fpath.split_volume dir in
   let segs = Fpath.segs dir |> List.rev in
   let ignores, enables, files, project_root =
-    collect_files ~enable_outside_detected_project ~root ~segs ~ignores:[]
-      ~enables:[] ~files:[]
+    collect_files ~enable_outside_detected_project ~root ~volume ~segs
+      ~ignores:[] ~enables:[] ~files:[]
   in
   let files =
     match (xdg_config, enable_outside_detected_project) with
@@ -2099,7 +2031,7 @@ let build_config ~enable_outside_detected_project ~root ~file ~is_stdin =
   in
   let files = if !disable_conf_files then [] else files in
   let conf =
-    let init = conventional_profile in
+    let init = default_profile in
     List.fold files ~init ~f:read_config_file
     |> update_using_env |> C.update_using_cmdline
   in
@@ -2122,7 +2054,7 @@ let build_config ~enable_outside_detected_project ~root ~file ~is_stdin =
      warn ~filename:vfile
        "Ocamlformat disabled because [--enable-outside-detected-project] is \
         not set and %s"
-       why) ;
+       why ) ;
     {conf with disable= true} )
   else
     let listings = if conf.disable then enables else ignores in
@@ -2138,15 +2070,15 @@ let build_config ~enable_outside_detected_project ~root ~file ~is_stdin =
 let build_config ~enable_outside_detected_project ~root ~file ~is_stdin =
   let conf, warn_now =
     collect_warnings (fun () ->
-        build_config ~enable_outside_detected_project ~root ~file ~is_stdin)
+        build_config ~enable_outside_detected_project ~root ~file ~is_stdin )
   in
   if not conf.quiet then warn_now () ;
   conf
 
 let kind_of_ext fname =
   match Filename.extension fname with
-  | ".ml" | ".mlt" | ".eliom" -> Some `Impl
-  | ".mli" | ".eliomi" -> Some `Intf
+  | ".ml" | ".mlt" | ".eliom" -> Some Syntax.Use_file
+  | ".mli" | ".eliomi" -> Some Syntax.Signature
   | _ -> None
 
 let validate_inputs () =
@@ -2169,7 +2101,7 @@ let validate_inputs () =
       let kind =
         Option.value ~default:f name
         |> kind_of_ext
-        |> Option.value ~default:`Impl
+        |> Option.value ~default:Syntax.Use_file
       in
       Ok (`Single_file (kind, name, f))
   | _ :: _ :: _, Some _, _ ->
@@ -2180,8 +2112,8 @@ let validate_inputs () =
       List.map inputs ~f:(function
         | Stdin -> Error "Cannot specify stdin together with other inputs"
         | File f ->
-            let kind = Option.value ~default:`Impl (kind_of_ext f) in
-            Ok (kind, f))
+            let kind = Option.value ~default:Use_file (kind_of_ext f) in
+            Ok (kind, f) )
       |> Result.all
       |> Result.map ~f:(fun files -> `Several_files files)
 
@@ -2192,20 +2124,22 @@ let validate_action () =
       [ Option.map ~f:(fun o -> (`Output o, "--output")) !output
       ; Option.some_if !inplace (`Inplace, "--inplace")
       ; Option.some_if !check (`Check, "--check")
-      ; Option.some_if !print_config (`Print_config, "--print-config") ]
+      ; Option.some_if !print_config (`Print_config, "--print-config")
+      ; Option.map ~f:(fun r -> (`Numeric r, "--numeric")) !numeric ]
   with
   | [] -> Ok `No_action
   | [(action, _)] -> Ok action
   | (_, a1) :: (_, a2) :: _ ->
       Error (Printf.sprintf "Cannot specify %s with %s" a1 a2)
 
-type 'a input = {kind: 'a; name: string; file: file; conf: t}
+type input = {kind: Syntax.t; name: string; file: file; conf: t}
 
 type action =
-  | In_out of [`Impl | `Intf] input * string option
-  | Inplace of [`Impl | `Intf] input list
-  | Check of [`Impl | `Intf] input list
+  | In_out of input * string option
+  | Inplace of input list
+  | Check of input list
   | Print_config of t
+  | Numeric of input * (int * int)
 
 let make_action ~enable_outside_detected_project ~root action inputs =
   let make_file ?(with_conf = fun c -> c) ?name kind file =
@@ -2213,7 +2147,7 @@ let make_action ~enable_outside_detected_project ~root action inputs =
     let conf =
       with_conf
         (build_config ~enable_outside_detected_project ~root ~file:name
-           ~is_stdin:false)
+           ~is_stdin:false )
     in
     {kind; name; file= File file; conf}
   in
@@ -2239,9 +2173,9 @@ let make_action ~enable_outside_detected_project ~root action inputs =
         build_config ~enable_outside_detected_project ~root ~file ~is_stdin
       in
       Ok (Print_config conf)
-  | (`No_action | `Output _ | `Inplace | `Check), `No_input ->
+  | (`No_action | `Output _ | `Inplace | `Check | `Numeric _), `No_input ->
       Error "Must specify at least one input file, or `-` for stdin"
-  | (`No_action | `Output _), `Several_files _ ->
+  | (`No_action | `Output _ | `Numeric _), `Several_files _ ->
       Error
         "Must specify exactly one input file without --inplace or --check"
   | `Inplace, `Stdin _ ->
@@ -2266,8 +2200,12 @@ let make_action ~enable_outside_detected_project ~root action inputs =
       in
       Ok (Check (List.map files ~f))
   | `Check, `Stdin (name, kind) -> Ok (Check [make_stdin ?name kind])
+  | `Numeric range, `Stdin (name, kind) ->
+      Ok (Numeric (make_stdin ?name kind, range))
+  | `Numeric range, `Single_file (kind, name, f) ->
+      Ok (Numeric (make_file ?name kind f, range))
 
-type opts = {debug: bool; margin_check: bool; format_invalid_files: bool}
+type opts = {debug: bool; margin_check: bool}
 
 let validate () =
   let root =
@@ -2291,17 +2229,12 @@ let validate () =
   | exception Conf_error e -> `Error (false, e)
   | Error e -> `Error (false, e)
   | Ok action ->
-      let format_invalid_files =
-        match !format_invalid_files with Some `Auto -> true | _ -> false
-      in
-      let opts =
-        {debug= !debug; margin_check= !margin_check; format_invalid_files}
-      in
+      let opts = {debug= !debug; margin_check= !margin_check} in
       `Ok (action, opts)
 
 let action () = parse info validate
 
-open Migrate_ast.Parsetree
+open Extended_ast
 
 let update ?(quiet = false) c {attr_name= {txt; loc}; attr_payload; _} =
   let result =
@@ -2322,14 +2255,17 @@ let update ?(quiet = false) c {attr_name= {txt; loc}; attr_payload; _} =
     | _ when String.is_prefix ~prefix:"ocamlformat." txt ->
         Error
           (Format.sprintf "Invalid format: Unknown suffix %S"
-             (String.chop_prefix_exn ~prefix:"ocamlformat." txt))
+             (String.chop_prefix_exn ~prefix:"ocamlformat." txt) )
     | _ -> Ok c
   in
   match result with
   | Ok conf -> conf
   | Error error ->
       let w = Warnings.Attribute_payload (txt, error) in
-      if (not c.quiet) && not quiet then print_warning loc w ;
+      if (not c.quiet) && not quiet then Warning.print_warning loc w ;
       c
+
+let update_value config ~name ~value =
+  C.update ~config ~from:`Commandline ~name ~value ~inline:false
 
 let print_config = C.print_config

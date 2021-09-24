@@ -1,7 +1,5 @@
 module P = Parser
 module I = P.MenhirInterpreter
-open Compat
-open Migrate_ast
 
 module R =
   Merlin_recovery.Make
@@ -9,8 +7,7 @@ module R =
     (struct
       include Parser_recover
 
-      let default_value loc x =
-        Default.default_loc := loc;
+      let default_value _loc x =
         default_value x
 
       let guide _ = false
@@ -90,13 +87,7 @@ module With_recovery : PARSE_INTF = struct
             | _ -> Intermediate parser ) )
 end
 
-let entrypoint (type o p) : (o, p) Mapper.fragment -> _ -> o I.checkpoint =
-  function
-  | Mapper.Structure -> P.Incremental.implementation
-  | Mapper.Signature -> P.Incremental.interface
-  | Mapper.Use_file -> P.Incremental.use_file
-
-let parse_with_recovery fragment tokens =
+let parse_with_recovery entrypoint tokens =
   let module P = With_recovery in
   let rec step tokens = function
     | P.Error -> failwith "Parsing failed"
@@ -110,7 +101,7 @@ let parse_with_recovery fragment tokens =
     in
     step rest (P.step p token)
   in
-  offer (P.initial (entrypoint fragment) Lexing.dummy_pos) tokens
+  offer (P.initial entrypoint Lexing.dummy_pos) tokens
 
 let lex_buf lexbuf =
   Lexer.init ();
@@ -123,119 +114,12 @@ let lex_buf lexbuf =
   in
   loop []
 
-let merge_adj merge l =
-  List.fold_left
-    (fun acc x ->
-      match acc with
-      | h :: t -> (
-          match merge h x with Some m -> m :: t | None -> x :: h :: t )
-      | [] -> x :: acc)
-    [] l
-  |> List.rev
+let parse parse lexbuf =
+  let tokens = lex_buf lexbuf in
+  parse_with_recovery parse tokens
 
-let normalize_locs locs =
-  List.sort_uniq Location.compare locs |> merge_adj Location.merge
+let structure = parse P.Incremental.implementation
 
-let invalid_locs :
-    type o p. (o, p) Mapper.fragment -> Lexing.lexbuf -> Warnings.loc list =
- fun fragment lexbuf ->
-  let ast_omp = lex_buf lexbuf |> parse_with_recovery fragment in
-  let ast = Mapper.to_ppxlib fragment ast_omp in
-  let loc_stack = Stack.create () in
-  let loc_list = ref [] in
-  let wrap loc f x =
-    if Stack.is_empty loc_stack then (
-      Stack.push loc loc_stack;
-      let x = f x in
-      ignore (Stack.pop loc_stack);
-      x )
-    else f x
-  in
-  let iter =
-    object
-      inherit Ppxlib.Ast_traverse.iter as super
+let signature = parse P.Incremental.interface
 
-      method! attribute x =
-        if Annot.Attr.is_generated x then
-          loc_list := Stack.top loc_stack :: !loc_list;
-        super#attribute x
-
-      method! expression e =
-        if Annot.Exp.is_generated e then
-          loc_list := Stack.top loc_stack :: !loc_list;
-        super#expression e
-
-      method! class_expr x =
-        if Annot.Class_exp.is_generated x then
-          loc_list := Stack.top loc_stack :: !loc_list;
-        super#class_expr x
-
-      method! structure_item x = wrap x.pstr_loc super#structure_item x
-
-      method! signature_item x = wrap x.psig_loc super#signature_item x
-    end
-  in
-  Mapper.iter_ast fragment iter ast;
-  normalize_locs !loc_list
-
-let mk_parsable fragment source =
-  let lexbuf = Lexing.from_string source in
-  match invalid_locs fragment lexbuf with
-  | [] -> source
-  | invalid_locs -> (
-      let wrapper_opn, wrapper_cls = ("[%%invalid.ast.node \"", "\"]") in
-      let wrapper_len = String.length wrapper_opn + String.length wrapper_cls in
-      let len =
-        String.length source + (List.length invalid_locs * wrapper_len)
-      in
-      let buffer = Buffer.create len in
-      let remaining_locs =
-        String.foldi source ~init:invalid_locs ~f:(fun i locs c ->
-            match locs with
-            | [] ->
-                Buffer.add_char buffer c;
-                locs
-            | h :: t ->
-                let col_start = h.loc_start.pos_cnum in
-                let col_end = h.loc_end.pos_cnum in
-                if i < col_start then (
-                  Buffer.add_char buffer c;
-                  locs )
-                else if i = col_start then (
-                  Buffer.add_string buffer wrapper_opn;
-                  Buffer.add_char buffer c;
-                  locs )
-                else if i = col_end - 1 && i = String.length source - 1 then (
-                  Buffer.add_char buffer c;
-                  Buffer.add_string buffer wrapper_cls;
-                  t )
-                else if i < col_end then (
-                  Buffer.add_char buffer c;
-                  locs )
-                else if i = col_end then (
-                  Buffer.add_string buffer wrapper_cls;
-                  Buffer.add_char buffer c;
-                  t )
-                else
-                  failwith
-                    "either no location left or the next locaction is after")
-      in
-      match remaining_locs with
-      | [] -> Buffer.contents buffer
-      | _ -> failwith "invalid locations remaining" )
-
-module Invalid_locations = struct
-  let structure = invalid_locs Structure
-
-  let signature = invalid_locs Signature
-
-  let use_file = invalid_locs Use_file
-end
-
-module Make_parsable = struct
-  let structure = mk_parsable Structure
-
-  let signature = mk_parsable Signature
-
-  let use_file = mk_parsable Use_file
-end
+let use_file = parse P.Incremental.use_file

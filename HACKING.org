@@ -12,6 +12,8 @@ Git is used to manage the script's state:
 
 * Release procedure
 
+- Make sure release milestone is green.
+
 - Review the impact of the release on real source code:
   In =test-extra/Makefile=, uncomment the extended list of projects to test
   and run =tools/test_branch.sh -a "previous_release"=.
@@ -21,42 +23,70 @@ Git is used to manage the script's state:
 - If a supported OCaml version does not have CI support, run test suite locally.
 
 - In =CHANGES.md=, change =(unreleased)= with the current version (=a.b.c=)
-  and date. Commit the result.
+  and date. In =README.md=, update the recommended version to use in
+  =.ocamlformat= files. Commit the changes.
 
-- Tag and push
+- Tag
   =dune-release tag=
-  =git push --tags=
 
 - Check that release binary has a release version number:
-  =dune exec ocamlformat -- --version= should output just =a.b.c=
+  =dune build @install && dune install --prefix _install && ./_install/bin/ocamlformat --version && rm -rf _install= should output just =a.b.c=
 
-- Create the archive
-  =dune-release distrib=
+- Linting
+  =dune-release lint=
 
-- Publish the release on Github
-  =dune-release publish distrib=
-  To the prompt =Push tag a.b.c to ...?=, answer =s=
+- Amend the release commit if necessary and update the tag
+  =dune-release tag --force=
 
-- Release on Opam-repository
-  =dune-release opam pkg=
-  =dune-release opam submit=
+- Push the changes
+  =git push --tags=
+
+- Release in automatic mode
+  =dune-release=
+  Until dune-release.1.5.0 is released the =main= branch of dune-release
+  should be used.
+
+- Close release milestone.
 
 - Each release should be announced on [[https://discuss.ocaml.org/]]
 
+- Create a Windows asset:
+
+  + install a compatible version of dune-release
+
+  + checkout release tag: =git checkout a.b.c=
+
+  + =dune clean=
+
+  + =dune-release distrib --skip-tests= (ignore the error about a directory
+  that can not be deleted)
+
+  + check release version number:
+  =_build/ocamlformat-a.b.c/_build/install/default/bin/ocamlformat.exe --version=
+  should output just =a.b.b=
+
+  + =cp _build/ocamlformat-a.b.c/_build/install/default/bin/ocamlformat.exe ./ocamlformat-a.b.c.exe=
+
+  + Go to https://github.com/ocaml-ppx/ocamlformat/releases/edit/a.b.c
+
+  + Add binary
+
+  + Click on "Update release"
+
 * Backporting changes to a point release
 
-Sometimes it is helpful to create a point release, but master contains
+Sometimes it is helpful to create a point release, but main contains
 changes that would be unsuitable for a point release.
 
-Suppose the last release is 0.3.5, and since then, master contains new
+Suppose the last release is 0.3.5, and since then, main contains new
 features F1 and F2 and a bugfix B.
 
 #+BEGIN_SRC
 release 0.3.5 -> feature F1 -> bugfix B -> feature F2
-tag: 0.3.5                                 branch: master
+tag: 0.3.5                                 branch: main
 #+END_SRC
 
-Instead of reverting F1 and F2 in master, one can create a release branch for
+Instead of reverting F1 and F2 in main, one can create a release branch for
 the 0.3 releases.
 
 The end graph looks like this (if this is the first point release done this
@@ -64,7 +94,7 @@ way in the 0.3.x series):
 
 #+BEGIN_SRC
 release 0.3.5 -> feature F1 -> bugfix B -> feature F2 -> merge commit
-tag: 0.3.5                                               branch: master
+tag: 0.3.5                                               branch: main
             \                                          /
               -> bugfix B -> release 0.3.6  ----------
                              tag: 0.3.6
@@ -75,7 +105,7 @@ Or (if a previous point release has been made in the same way):
 
 #+BEGIN_SRC
  past  ->  merge commit -> feature F1 -> bugfix B -> feature F2 -> merge commit
-               /                                       branch: master
+               /                                       branch: main
               /                                       /
  release 0.3.5  -> bugfix B -> release 0.3.6  -------
  tag: 0.3.5                    tag: 0.3.6
@@ -83,8 +113,8 @@ Or (if a previous point release has been made in the same way):
 #+END_SRC
 
 Notes:
-- the release branch is always merged into master, not the other way around.
-- version detection relies on git tags, so master will be marked 0.3.5-x
+- the release branch is always merged into main, not the other way around.
+- version detection relies on git tags, so main will be marked 0.3.5-x
   before the merge and 0.3.6-x after.
 
 ** Step 1: prepare release branch
@@ -102,7 +132,7 @@ Notes:
   + These may not apply cleanly, so fix conflicts and QA (using CI, etc) as usual.
   + For the changelog in particular, the entry for the bugfix should go in a new section, and new features should not appear.
 
-Changelog in master:
+Changelog in main:
 
 #+BEGIN_SRC
 ### unreleased
@@ -141,13 +171,13 @@ Changelog in 0.3 release branch:
 
 - Wait for opam-repository PR to be merged.
 
-- Merge release branch into master.
+- Merge release branch into main.
   + Not as a PR; as a manual merge.
-  + Example: =git checkout master= followed by =git merge 0.3=.
+  + Example: =git checkout main= followed by =git merge 0.3=.
   + This may conflict, in particular in the changelog.
-  + To resolve the changelog conflict, add the point release section into master, and remove backported entries from the unreleased section.
+  + To resolve the changelog conflict, add the point release section into main, and remove backported entries from the unreleased section.
 
-Changelog in master before merging:
+Changelog in main before merging:
 
 #+BEGIN_SRC
 ### unreleased
@@ -192,3 +222,23 @@ End state:
 
 ...
 #+END_SRC
+
+* Building on Windows
+
+`ocamlformat` can be built as a native Windows binary using the `mingw64`
+toolchain under Cygwin. The following Cygwin packages are required:
+
+- `git`, `curl`, `unzip`
+- `m4`, `patchutils`, `make`
+- `mingw64-x86_64-binutils`, `mingw64-x86_64-gcc-core`, `mingw64-x86_64-headers`, `mingw64-x86_64-runtime`
+
+The binary is built by executing `bash tools/build-mingw64.sh` from the root of
+the repository. The first time the script is launched, it will install `opam` in
+the subdirectory `_build-mingw64` and use it to install all the dependencies of
+`ocamlformat` and then build the binary. Subsequent launches of the script will
+only rebuild `ocamlformat`. If you need to start from scratch again, simply
+remove the `_build-mingw64` directory.
+
+This script can also be triggered as a GitHub Action named `build-mingw64` which
+will build the binary in a GitHub worker and upload it back to GitHub. To
+retrieve it, select the Action run in question and scroll down to "Artifacts".

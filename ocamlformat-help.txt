@@ -44,15 +44,14 @@ OPTIONS (CODE FORMATTING STYLE)
        are ignored and can be used as comments.
 
        --align-cases
-           Align match/try cases horizontally. The flag is unset by default.
+           Align match/try cases vertically. The flag is unset by default.
 
        --align-constructors-decl
-           Align type declarations horizontally. The flag is unset by
-           default.
+           Align type declarations vertically. The flag is unset by default.
 
        --align-variants-decl
-           Align type variants declarations horizontally. The flag is unset
-           by default.
+           Align type variants declarations vertically. The flag is unset by
+           default.
 
        --assignment-operator={end-line|begin-line}
            Position of the assignment operator. end-line positions assignment
@@ -174,48 +173,11 @@ OPTIONS (CODE FORMATTING STYLE)
            treatment. fit puts doc comments on the same line. The default
            value is default.
 
-       --doc-comments-val={unset|after|before}
-           Documentation comments position on val and external declarations.
-           Warning: this option is deprecated and will be removed in
-           OCamlFormat v0.15.0. unset lets doc-comments set the position.
-           after puts documentation comments after their corresponding
-           declarations. before puts them before. The default value is unset.
-           Warning: This option is deprecated since version 0.14.2. Warning:
-           this option is deprecated and will be removed in OCamlFormat
-           v0.15.0, please use `doc-comments` instead. If you are using
-           `doc-comments-val=before` in combination with
-           `doc-comments=before` then only `doc-comments=before` is now
-           required to achive the same behavior. If you are using
-           `doc-comments-val=before` in combination with `doc-comments=after`
-           this behavior is not available anymore. If you are using
-           `doc-comments-val=after` in combination with `doc-comments=before`
-           please now use `doc-comments=before-except-val`. If you are using
-           `doc-comments-val=after` in combination with `doc-comments=after`
-           then only `doc-comments=after-when-possible` is now required to
-           achieve the same behavior. If you are using
-           `doc-comments-val=unset` the same behavior can now be achieved by
-           setting `doc-comments` only.
-
        --dock-collection-brackets
            Dock the brackets of lists, arrays and records, so that when the
            collection does not fit on a single line the brackets are opened
            on the preceding line and closed on the following line. The flag
            is set by default.
-
-       --escape-chars={preserve|decimal|hexadecimal}
-           Escape encoding for character literals. preserve escapes ASCII
-           control codes but leaves the upper 128 characters unchanged.
-           decimal produces ASCII printable characters using decimal escape
-           sequences as needed. hexadecimal mode escapes every character. The
-           default value is preserve. Warning: This option is deprecated
-           since version 0.14.0. Concrete syntax will now always be
-           preserved.
-
-       --escape-strings={preserve|decimal|hexadecimal}
-           Escape encoding for string literals. See `--escape-chars` for the
-           interpretation of the modes. The default value is preserve.
-           Warning: This option is deprecated since version 0.14.0. Concrete
-           syntax will now always be preserved.
 
        --exp-grouping={parens|preserve}
            Style of expression grouping. parens groups expressions using
@@ -225,11 +187,6 @@ OPTIONS (CODE FORMATTING STYLE)
        --extension-indent=COLS
            Indentation of items inside extension nodes (COLS columns). The
            default value is 2.
-
-       --extension-sugar={preserve|always}
-           Extension formatting. The default value is preserve. Warning: This
-           option is deprecated since version 0.14.0. Concrete syntax will
-           now always be preserved.
 
        --field-space={loose|tight|tight-decl}
            Whether or not to use a space between a field name and the rhs.
@@ -262,13 +219,13 @@ OPTIONS (CODE FORMATTING STYLE)
            another `let`. The default value is 0. Cannot be set in
            attributes.
 
-       --indicate-multiline-delimiters={space|no|closing-on-separate-line}
+       --indicate-multiline-delimiters={no|space|closing-on-separate-line}
            How to indicate that two matching delimiters live on different
-           lines. space prints a space inside the delimiter to indicate the
-           matching one is on a different line. no doesn't do anything
-           special to indicate the closing delimiter.
-           closing-on-separate-line makes sure that the closing delimiter is
-           on its own line. The default value is space.
+           lines. no doesn't do anything special to indicate the closing
+           delimiter. space prints a space inside the delimiter to indicate
+           the matching one is on a different line. closing-on-separate-line
+           makes sure that the closing delimiter is on its own line. The
+           default value is no.
 
        --indicate-nested-or-patterns={unsafe-no|space}
            Control whether or not to indicate nested or-pattern using
@@ -315,11 +272,10 @@ OPTIONS (CODE FORMATTING STYLE)
            ... = and before the in if the module declaration does not fit on
            a single line. The default value is compact.
 
-       --let-open={preserve|short|long|auto}
-           Module open formatting. preserve keeps the original style. short
-           means the Module.(...) style is used. long means the let open
-           Module in (...) style is used. auto means the one fitting best is
-           used. The default value is preserve.
+       --line-endings={lf|crlf}
+           Line endings used. lf uses Unix line endings. crlf uses Windows
+           line endings. The default value is lf. Cannot be set in
+           attributes.
 
        -m COLS, --margin=COLS
            Format code to fit within COLS columns. The default value is 80.
@@ -408,6 +364,10 @@ OPTIONS (CODE FORMATTING STYLE)
        --no-wrap-fun-args
            Unset wrap-fun-args.
 
+       --ocaml-version=V
+           Version of OCaml syntax of the output. The default value is the
+           version of OCaml used to build OCamlFormat.
+
        --ocp-indent-compat
            Attempt to generate output which does not change (much) when
            post-processing with ocp-indent. The flag is unset by default.
@@ -490,6 +450,38 @@ OPTIONS (CODE FORMATTING STYLE)
        --wrap-fun-args
            Style for function call. The flag is set by default.
 
+OPTIONS (REMOVED OPTIONS)
+       --doc-comments-val=VAL
+           This option has been removed in version 0.16.0. If you are using
+           `doc-comments-val=before` in combination with
+           `doc-comments=before` then only `doc-comments=before` is now
+           required to achive the same behavior. If you are using
+           `doc-comments-val=before` in combination with `doc-comments=after`
+           this behavior is not available anymore. If you are using
+           `doc-comments-val=after` in combination with `doc-comments=before`
+           please now use `doc-comments=before-except-val`. If you are using
+           `doc-comments-val=after` in combination with `doc-comments=after`
+           then only `doc-comments=after-when-possible` is now required to
+           achieve the same behavior. If you are using
+           `doc-comments-val=unset` the same behavior can now be achieved by
+           setting `doc-comments` only.
+
+       --escape-chars=VAL
+           This option has been removed in version 0.16.0. Concrete syntax
+           will now always be preserved.
+
+       --escape-strings=VAL
+           This option has been removed in version 0.16.0. Concrete syntax
+           will now always be preserved.
+
+       --extension-sugar=VAL
+           This option has been removed in version 0.17.0. Concrete syntax
+           will now always be preserved.
+
+       --let-open=VAL
+           This option has been removed in version 0.17.0. Concrete syntax
+           will now always be preserved.
+
 OPTIONS
        -c VAL, --config=VAL (absent OCAMLFORMAT env)
            Aggregate options. Options are specified as a comma-separated list
@@ -520,12 +512,6 @@ OPTIONS
            directory that contains a .git or .hg or dune-project file.
            Formatting is enabled even if no .ocamlformat configuration file
            is found.
-
-       --format-invalid-files={never|auto}
-           How invalid (unparsable) files are formatted. never doesn't format
-           invalid files and the parsing error will be printed. auto will
-           print invalid parts of the input as verbatim text. The default
-           value is never. This option is experimental.
 
        -g, --debug
            Generate debugging output.
@@ -570,6 +556,11 @@ OPTIONS
        --no-version-check
            Do not check that the version matches the one specified in
            .ocamlformat.
+
+       --numeric=X-Y
+           Instead of re-formatting the file, output one integer per line
+           corresponding to the indentation value, printing as many values as
+           lines in the range between lines X and Y (included).
 
        -o DST, --output=DST
            Output file. Mutually exclusive with --inplace. Write to stdout if

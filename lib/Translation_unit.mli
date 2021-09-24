@@ -9,34 +9,36 @@
 (*                                                                        *)
 (**************************************************************************)
 
-type error
+module Error : sig
+  type t
 
-val parse_and_format_impl :
-     ?output_file:string
+  val user_error : string -> t
+
+  val equal : t -> t -> bool
+
+  val print : ?debug:bool -> ?quiet:bool -> Format.formatter -> t -> unit
+end
+
+val parse_and_format :
+     Syntax.t
+  -> ?output_file:string
   -> input_name:string
   -> source:string
   -> Conf.t
   -> Conf.opts
-  -> (string, error) Result.t
-(** [parse_and_format_impl conf ?output_file ~input_name ~source] parses and
-    formats [source] as a list of toplevel phrases. *)
+  -> (string, Error.t) Result.t
+(** [parse_and_format kind ?output_file ~input_name ~source conf opts] parses
+    and formats [source] as a list of fragments. *)
 
-val parse_and_format_intf :
-     ?output_file:string
+val numeric :
+     Syntax.t
   -> input_name:string
   -> source:string
+  -> range:int * int
   -> Conf.t
   -> Conf.opts
-  -> (string, error) Result.t
-(** [parse_and_format_intf conf ?output_file ~input_name ~source] parses and
-    formats [source] as a list of signature items. *)
-
-val print_error :
-     ?fmt:Format.formatter
-  -> debug:bool
-  -> quiet:bool
-  -> input_name:string
-  -> error
-  -> unit
-(** [print_error conf ?fmt ~input_name e] prints the error message
-    corresponding to error [e] on the [fmt] formatter (stderr by default). *)
+  -> (int list, Error.t) Result.t
+(** [numeric ~input_name ~source ~range conf opts] returns the indentation of
+    the range of lines [range] (line numbers ranging from 1 to number of
+    lines), where the line numbers are relative to [source] and the
+    indentation is relative to the formatted output. *)

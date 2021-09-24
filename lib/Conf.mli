@@ -35,17 +35,11 @@ type t =
   ; disable: bool
   ; disambiguate_non_breaking_match: bool
   ; doc_comments: [`Before | `Before_except_val | `After_when_possible]
-  ; doc_comments_val: [`Before | `After | `Unset]
   ; doc_comments_padding: int
   ; doc_comments_tag_only: [`Fit | `Default]
   ; dock_collection_brackets: bool
-  ; escape_chars: [`Decimal | `Hexadecimal | `Preserve]
-        (** Escape encoding for chars literals. *)
-  ; escape_strings: [`Decimal | `Hexadecimal | `Preserve]
-        (** Escape encoding for string literals. *)
   ; exp_grouping: [`Parens | `Preserve]
   ; extension_indent: int
-  ; extension_sugar: [`Preserve | `Always]
   ; field_space: [`Tight | `Loose | `Tight_decl]
   ; function_indent: int
   ; function_indent_nested: [`Always | `Auto | `Never]
@@ -59,7 +53,7 @@ type t =
   ; let_binding_indent: int
   ; let_binding_spacing: [`Compact | `Sparse | `Double_semicolon]
   ; let_module: [`Compact | `Sparse]
-  ; let_open: [`Preserve | `Auto | `Short | `Long]
+  ; line_endings: [`Lf | `Crlf]
   ; margin: int  (** Format code to fit within [margin] columns. *)
   ; match_indent: int
   ; match_indent_nested: [`Always | `Auto | `Never]
@@ -69,6 +63,7 @@ type t =
             [max_iters] iterations. *)
   ; module_item_spacing: [`Compact | `Preserve | `Sparse]
   ; nested_match: [`Wrap | `Align]
+  ; ocaml_version: Ocaml_version.t
   ; ocp_indent_compat: bool  (** Try to indent like ocp-indent *)
   ; parens_ite: bool
   ; parens_tuple: [`Always | `Multi_line_only]
@@ -88,32 +83,44 @@ type t =
   ; wrap_comments: bool  (** Wrap comments at margin. *)
   ; wrap_fun_args: bool }
 
+val default_profile : t
+
 type file = Stdin | File of string
 
-type 'a input = {kind: 'a; name: string; file: file; conf: t}
+type input = {kind: Syntax.t; name: string; file: file; conf: t}
 
 type action =
-  | In_out of [`Impl | `Intf] input * string option
+  | In_out of input * string option
       (** Format input file (or [-] for stdin) of given kind to output file,
           or stdout if None. *)
-  | Inplace of [`Impl | `Intf] input list
-      (** Format in-place, overwriting input file(s). *)
-  | Check of [`Impl | `Intf] input list
+  | Inplace of input list  (** Format in-place, overwriting input file(s). *)
+  | Check of input list
       (** Check whether the input files already are formatted. *)
   | Print_config of t  (** Print the configuration and exit. *)
+  | Numeric of input * (int * int)
 
 (** Options changing the tool's behavior *)
 type opts =
   { debug: bool  (** Generate debugging output if true. *)
   ; margin_check: bool
-        (** Check whether the formatted output exceeds the margin. *)
-  ; format_invalid_files: bool }
+        (** Check whether the formatted output exceeds the margin. *) }
 
 val action : unit -> (action * opts) Cmdliner.Term.result
 (** Formatting action: input type and source, and output destination. *)
 
-val update : ?quiet:bool -> t -> Migrate_ast.Parsetree.attribute -> t
+val update : ?quiet:bool -> t -> Extended_ast.attribute -> t
 (** [update ?quiet c a] updates configuration [c] after reading attribute
     [a]. [quiet] is false by default. *)
+
+val update_value :
+     t
+  -> name:string
+  -> value:string
+  -> ( t
+     , [ `Bad_value of string * string
+       | `Malformed of string
+       | `Misplaced of string * string
+       | `Unknown of string * string ] )
+     Result.t
 
 val print_config : t -> unit
