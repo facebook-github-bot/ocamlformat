@@ -20,22 +20,24 @@ type s = (unit, Format.formatter, unit) format
 type t
 
 type sp =
-  (* [ ] *)
-  | Blank
-  (* [@,] *)
-  | Cut
-  (* [@ ] *)
-  | Space
-  (* [@;] *)
-  | Break of int * int
+  | Blank  (** [ ] *)
+  | Cut  (** [@,] *)
+  | Space  (** [@ ] *)
+  | Break of int * int  (** [@;] *)
 
 val sp : sp -> t
 
 val ( $ ) : t -> t -> t
 (** Format concatenation: [a $ b] formats [a], then [b]. *)
 
+val sequence : t list -> t
+(** Format concatenation of n elements. *)
+
 val ( >$ ) : t -> ('b -> t) -> 'b -> t
 (** Pre-compose a format thunk onto a function returning a format thunk. *)
+
+val lazy_ : (unit -> t) -> t
+(** Defer the evaluation of some side effects until formatting happens. *)
 
 val set_margin : int -> t
 (** Set the margin. *)
@@ -225,5 +227,5 @@ val hovbox_if : ?name:string -> bool -> int -> t -> t
 
 (** Text filling --------------------------------------------------------*)
 
-val fill_text : ?epi:t -> string -> t
+val fill_text : ?epi:string -> string -> t
 (** Format a non-empty string as filled text wrapped at the margin. *)

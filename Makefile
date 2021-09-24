@@ -14,7 +14,7 @@ default: exe
 
 .PHONY: exe
 exe:
-	dune build bin/ocamlformat.exe
+	dune build bin/ocamlformat/main.exe bin/ocamlformat-rpc/main.exe
 
 .PHONY: clean
 clean:
@@ -22,6 +22,7 @@ clean:
 
 .PHONY: fmt
 fmt:
+	tmp=$(mktemp -t 'dune-format'); dune format-dune-file dune-project > tmp; mv -f tmp dune-project
 	dune build @fmt
 
 .PHONY: test regtests regtests-promote
@@ -32,6 +33,12 @@ regtests:
 
 regtests-promote:
 	dune runtest --auto-promote
+
+coverage:
+	dune runtest --instrument-with bisect_ppx --force
+	bisect-ppx-report html
+	echo "Coverage report generated in _coverage/"
+	echo " => open _coverage/index.html"
 
 headers:
 	tools/update_headers.sh

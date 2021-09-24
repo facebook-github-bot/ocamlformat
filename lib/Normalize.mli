@@ -11,9 +11,7 @@
 
 (** Normalize abstract syntax trees *)
 
-open Migrate_ast
-
-val dedup_cmts : 'a Mapper.fragment -> 'a -> Cmt.t list -> Cmt.t list
+val dedup_cmts : 'a Extended_ast.t -> 'a -> Cmt.t list -> Cmt.t list
 
 val comment : string -> string
 (** Normalize a comment. *)
@@ -21,21 +19,18 @@ val comment : string -> string
 val docstring : Conf.t -> string -> string
 (** Normalize a docstring. *)
 
-val normalize : 'a Mapper.fragment -> Conf.t -> 'a -> 'a
+val normalize : 'a Std_ast.t -> Conf.t -> 'a -> 'a
 (** Normalize an AST fragment. *)
 
 val equal :
-     'a Mapper.fragment
-  -> ignore_doc_comments:bool
-  -> Conf.t
-  -> 'a
-  -> 'a
-  -> bool
+  'a Std_ast.t -> ignore_doc_comments:bool -> Conf.t -> 'a -> 'a -> bool
 (** Compare fragments for equality up to normalization. *)
 
 type docstring_error =
   | Moved of Location.t * Location.t * string
-  | Unstable of Location.t * string
+  | Unstable of Location.t * string * string
+  | Added of Location.t * string
+  | Removed of Location.t * string
 
 val moved_docstrings :
-  'a Mapper.fragment -> Conf.t -> 'a -> 'a -> docstring_error list
+  'a Std_ast.t -> Conf.t -> 'a -> 'a -> docstring_error list

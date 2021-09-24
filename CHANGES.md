@@ -1,8 +1,263 @@
 ### unreleased
 
+#### Removed
+
+#### Deprecated
+
+#### Bug fixes
+
+  + Fix normalization of sequences of expressions (#1731, @gpetiot)
+
+  + Type constrained patterns are now always parenthesized, parentheses were missing in a class context (#1734, @gpetiot)
+
+  + Support sugared form of coercions in let bindings (#1739, @gpetiot)
+
+  + Add missing parentheses around constructor used as indexing op (#1740, @gpetiot)
+
+  + Honour .ocamlformat-ignore on Windows (#1752, @nojb)
+
+  + Avoid normalizing newlines inside quoted strings `{|...|}` (#1754, @nojb, @hhugo)
+
+  + Fix quadratic behavior when certain constructs are nested. This corresponds
+    to the cases where a partial layout is triggered to determine if a construct
+    fits on a single line for example. (#1750, #1766, @emillon)
+
+  + Fix non stabilizing comments after infix operators (`*`, `%`, `#`-ops) (#1776, @gpetiot)
+
+#### Changes
+
+  + Preserve bracketed lists in the Parsetree (#1694, @gpetiot)
+    Comments are now wrapped around list elements instead of causing a break.
+
+#### New features
+
+  + Handle merlin typed holes (#1698, @gpetiot)
+
+  + Handle punned labelled arguments with type constraint in function applications.
+    For example, function application of the form `foo ~(x:int)` instead of the explicit `foo ~x:(x:int)`. (ocaml#10434) (#1756, #1759, @gpetiot)
+    This syntax is only produced when the output syntax is at least OCaml 4.14.
+
+  + Allow explicit binders for type variables (ocaml#10437) (#1757, @gpetiot)
+
+  + Add a new `ocaml-version` option to select the version of OCaml syntax of the output (#1759, @gpetiot)
+
+### 0.19.0 (2021-07-16)
+
+#### Bug fixes
+
+  + Fix formatting of odoc tags: the argument should be on the same line, indent description that wraps (#1634, #1635, @gpetiot)
+
+  + Consistently format let bindings and monadic let bindings, do not drop comments before monadic bindings (#1636, @gpetiot)
+
+  + Fix dropped comments attached to pattern constrained by polynewtype (#1645, @gpetiot)
+
+  + Fix comment attachment on infix operators (#1643, @gpetiot)
+
+  + Add missing spaces inside begin-end delimiting an ite branch (#1646, @gpetiot)
+
+  + Add missing parens around function at RHS of infix op (#1642, @gpetiot)
+
+  + Preserve begin-end keywords delimiting match cases (#1651, @gpetiot)
+
+  + Fix alignment of closing paren on separate line for anonymous functions (#1649, @gpetiot)
+
+  + Preserve begin-end keywords around infix operators (#1652, @gpetiot)
+
+  + Preserve `begin%ext` syntax for infix opererator expressions (#1653, @gpetiot)
+
+  + Consistently format comments attached to let-and bindings located at toplevel (#1663, @gpetiot)
+
+  + Remove double parens around a functor in a module application (#1681, @gpetiot)
+
+  + Improve breaking of comments to avoid violating the margin (#1676, @jberdine)
+
+  + Fix parentheses around successive unary operations (#1696, @gpetiot)
+
+  + Add missing break between pattern and attribute (#1711, @gpetiot)
+
+  + Add missing parentheses around expression having attributes or comments inside a shorthand let-open clause (#1708, @gpetiot)
+
+  + Do not consider leading star '*' when checking the diff of doc comments (#1712, @hhugo)
+
+  + Fix formatting of multiline non-wrapping comments (#1723, @gpetiot)
+
+#### Changes
+
+  + Improve the diff of unstable docstrings displayed in error messages (#1654, @gpetiot)
+
+  + Use UTF8 length of strings, not only in wrapped comments (#1673, @jberdine)
+
+  + Improve position of `;;` tokens (#1688, @gpetiot)
+
+  + Depend on `odoc-parser` instead of `odoc` (#1683, #1713, @kit-ty-kate, @jonludlam, @julow)
+    The parser from odoc has been split from the main odoc package and put into its own package, `odoc-parser`.
+
+  + Revert infix-form list formatting to pre-0.17.0 (#1717, @gpetiot)
+
+#### New features
+
+  + Implement OCaml 4.13 features
+    - Named existentials in pattern-matching (ocaml#9584)
+    - Let-punning (ocaml#10013)
+    - Module type substitutions (ocaml#10133)
+  (#1680, @gpetiot)
+
+  + Emacs integration (disabled for ocamlformat < 0.19.0):
+    - Indent a line or a region with ocamlformat when pressing <TAB>
+    - Break the line and reindent the cursor when pressing <ENTER>
+  (#1639, #1685, @gpetiot) (#1687, @bcc32)
+
+  + Add 'line-endings=lf|crlf' option to specify the line endings used in the
+    formatted output. (#1703, @nojb)
+
+#### Internal
+
+  + A script `tools/build-mingw64.sh` is provided to build a native Windows
+    binary of `ocamlformat` using `mingw64` toolchain under Cygwin.
+
+### 0.18.0 (2021-03-30)
+
+#### Bug fixes
+
+  + Fix extraneous parenthesis after `let open` with `closing-on-separate-line` (#1612, @Julow)
+
+  + Add missing break between polytype quantification and arrow-type body (#1615, @gpetiot)
+
+#### Changes
+
+  + Use dune instrumentation backend for `bisect_ppx` (#1550, @tmattio)
+
+  + Format objects and classes consistently with structure and signature items (#1569, @bikallem)
+
+#### New features
+
+  + Expose a RPC interface through a new binary `ocamlformat-rpc` and a new library `ocamlformat-rpc-lib` (#1586, @gpetiot, @voodoos)
+
+### 0.17.0 (2021-02-15)
+
+#### Removed
+
+  + Remove the 'let-open' option, deprecated since 0.16.0 (#1563, @gpetiot)
+
+  + Remove support for OCaml 4.06 and 4.07, minimal version requirement bumped to OCaml 4.08 (#1549, @gpetiot)
+
+  + Remove the 'extension-sugar' option, deprecated since 0.14.0 (#1588, @gpetiot)
+
+#### Bug fixes
+
+  + Fix parsing of invalid file wrt original source handling (#1542, @hhugo)
+
+  + Preserve the syntax of infix set/get operators (#1528, @gpetiot)
+    `String.get` and similar calls used to be automatically rewritten to their corresponding infix form `.()`, that was incorrect when using the `-unsafe` compilation flag. Now the concrete syntax of these calls is preserved.
+
+  + Add location of invalid docstring in warning messages (#1529, @gpetiot)
+
+  + Fix comments on the same line as prev and next elements (#1556, @gpetiot)
+
+  + Break or-patterns after comments and preserve their position at the end of line (#1555, @gpetiot)
+
+  + Fix linebreak between signature items of the same group (#1560, @gpetiot)
+
+  + Fix stack overflow on large string constants (#1562, @gpetiot)
+
+  + Fix comment position around list cons operator (#1567, @gpetiot)
+
+  + Fix the vertical alignment test to break down comment groups (#1575, @gpetiot)
+
+  + Preserve spacing of toplevel comments (#1554, @gpetiot)
+
+  + Support more sugared extension points (#1587, @gpetiot)
+
+#### Changes
+
+  + Add buffer filename in the logs when applying ocamlformat (#1557, @dannywillems)
+
+  + Improve comment position in pattern collection (#1576, @gpetiot)
+
+  + Consistent positioning of lambda return type annotations when no-break-infix-before-func and pre/post extensions (#1581, @gpetiot)
+
+#### New features
+
+  + Support injectivity type annotations (OCaml 4.12 feature) (#1523, @gpetiot)
+
+### 0.16.0 (2020-11-16)
+
+#### Removed
+
+  + Remove the 'escape-chars' option, deprecated since 0.14.0 (#1462, @gpetiot)
+
+  + Remove the 'escape-strings' option, deprecated since 0.14.0 (#1463, @gpetiot)
+
+  + Remove the 'doc-comments-val' option, deprecated since 0.14.2 (#1461, @gpetiot)
+
+  + Removed options are now listed in the commandline manual (new REMOVED OPTIONS section) (#1469, @Julow)
+
+#### Changes
+
+  + Set 'indicate-multiline-delimiters=no' on default profile (#1452, @gpetiot)
+
+  + Option 'let-open' is now deprecated, concrete syntax will always be preserved starting from OCamlFormat v0.17.0, corresponding to the current 'let-open=preserve' behavior. (#1467, @gpetiot)
+
+  + Warnings printed by ocamlformat itself now use the 4.12 style with symbolic names (#1511, #1518, @emillon)
+
+  + Remove extension from executable name in error messages. On Windows, this means that messages now start with "ocamlformat: ..." instead of "ocamlformat.exe: ..." (#1531, @emillon)
+
+  + Using tokens instead of string manipulation when inspecting the original source (#1526, #1533, #1541 @hhugo) (#1532, @gpetiot)
+
+#### Bug fixes
+
+  + Allow a break after `if%ext` with `if-then-else=keyword-first` (#1419, #1543, @gpetiot)
+
+  + Fix parentheses around infix applications having attributes (#1464, @gpetiot)
+
+  + Fix parentheses around the index arg of a non-sugared index operation (#1465, @gpetiot)
+
+  + Preserve comment position around `match` and `try` keywords (#1458, @gpetiot)
+
+  + Add missing break in module statement (#1431, @gpetiot)
+
+  + Indent attributes attached to included modules better (#1468, @gpetiot)
+
+  + Clean up `ocamlformat.el` for submission to MELPA (#1476, #1495, @bcc32)
+    - Added missing package metadata to `ocamlformat.el` (#1474, @bcc32)
+    - Fix `ocamlformat.el` buffer replacement for MacOS Emacs (#1481, @juxd)
+
+  + Add missing parentheses around a pattern matching that is the left-hand part of a sequence when an attribute is attached (#1483, @gpetiot)
+
+  + Add missing parentheses around infix operator used to build a function (#1486, @gpetiot)
+
+  + Fix comments around desugared expression (#1487, @gpetiot)
+
+  + Fix invalid fragment delimiters of format-invalid-files recovery mode (#1485, @hhugo)
+
+  + Fix misalignment of cases in docked `function` match (#1498, @gpetiot)
+
+  + Preserve short-form extensions for structure item extensions (#1502, @gpetiot)
+    For example `open%ext M` will not get rewritten to `[%%ext open M]`.
+
+  + Do not change the spaces within the code spans in docstrings (#1499, @gpetiot)
+
+  + Comments of type constrained label in record pattern have to be relocated in 4.12 (#1517, @gpetiot)
+
+  + Preserve functor syntax for OCaml 4.12 (#1514, @gpetiot)
+
+  + Fix inconsistencies of the closing parentheses with indicate-multiline-delimiters (#1377, #1540, @gpetiot)
+
+  + Fix position of comments around list constructor (::) (#1524, @gpetiot)
+
+  + Fix comments position in extensions (#1525, @gpetiot)
+
+  + Fix formatting of field override with constraint (#1544, @gpetiot)
+
+#### New features
+
+### 0.15.1 (2020-11-02)
+
 #### Internal
 
   + Use ppxlib instead of ocaml-migrate-parsetree 1.x. (#1482, @emillon)
+    * No functional changes are expected.
+    * Cherry picked commits: 219dc1e3a4614041e1bc5428d003c0af4e, 9e453b0ef87124e33827ee2423289deef8, 7ad1e575ffa4ce3022c71daba39954d3b9, eb49db6772a9adabe611982000465d0ad7, dc79052a085950cd88fdef0843f665a029, c06c544e21bd65b726cde8fee0f78a6248, ce94d2fa50ff276b5782070375a0b30ba1
 
 ### 0.15.0 (2020-08-06)
 

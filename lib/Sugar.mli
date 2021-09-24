@@ -11,7 +11,7 @@
 
 open Migrate_ast
 open Asttypes
-open Parsetree
+open Extended_ast
 
 val arrow_typ :
      Cmts.t
@@ -67,22 +67,10 @@ val infix :
     applied to this operator from expression [exp]. [prec] is the precedence
     of the infix operator. *)
 
-val list_pat :
-     Cmts.t
-  -> pattern
-  -> ((Warnings.loc list * pattern Ast.xt) list * Warnings.loc) option
-(** [list_pat cmts pat] returns a list of patterns if [pat] is a pattern
-    corresponding to a list (empty list or (::) application). *)
-
-val list_exp :
-     Cmts.t
-  -> expression
-  -> ((Warnings.loc list * expression Ast.xt) list * Warnings.loc) option
-(** [list_exp cmts exp] returns a list of expressions if [exp] is an
-    expression corresponding to a list (empty list or (::) application). *)
-
 val infix_cons :
-  expression Ast.xt -> (Warnings.loc list * expression Ast.xt) list
+     Cmts.t
+  -> expression Ast.xt
+  -> (Longident.t loc option * expression Ast.xt) list
 (** [infix_cons exp] returns a list of expressions if [exp] is an expression
     corresponding to a list ((::) application). *)
 
@@ -99,18 +87,15 @@ val ite :
     [(Some c1, e1); (Some c2, e2); (None, e3)]. *)
 
 val sequence :
-     Conf.t
-  -> Cmts.t
-  -> expression Ast.xt
-  -> (label loc option * expression Ast.xt) list
-(** [sequence conf cmts exp] returns the list of expressions (with the
-    optional extension) from a sequence of expressions [exp]. *)
+  Cmts.t -> expression Ast.xt -> (label loc option * expression Ast.xt) list
+(** [sequence cmts exp] returns the list of expressions (with the optional
+    extension) from a sequence of expressions [exp]. *)
 
 type functor_arg =
   | Unit
   | Named of label option loc * module_type Ast.xt
-      (** Equivalent of the [Parsetree.functor_parameter] type with a
-          contextualized module type. *)
+      (** Equivalent of the [functor_parameter] type with a contextualized
+          module type. *)
 
 val functor_type :
      Cmts.t
@@ -139,19 +124,26 @@ val mod_with :
 (** [mod_with m] returns the list of [with type] constraints of module type
     [m]. *)
 
-val polynewtype :
-     Cmts.t
-  -> pattern
-  -> expression
-  -> (pattern Ast.xt * label loc list * core_type Ast.xt * expression Ast.xt)
-     option
-(** [polynewtype cmts pat exp] returns expression of a type-constrained
-    pattern [pat] with body [exp]. e.g.:
+module Let_binding : sig
+  type t =
+    { lb_op: string loc
+    ; lb_pat: pattern Ast.xt
+    ; lb_typ:
+        [ `Polynewtype of label loc list * core_type Ast.xt
+        | `Coerce of core_type Ast.xt option * core_type Ast.xt
+        | `Other of arg_kind list * core_type Ast.xt
+        | `None of arg_kind list ]
+    ; lb_exp: expression Ast.xt
+    ; lb_pun: bool
+    ; lb_attrs: attribute list
+    ; lb_loc: Location.t }
 
-    {v
-      let f: 'r 's. 'r 's t = fun (type r) -> fun (type s) -> (e : r s t)
-    v}
+  val of_value_binding :
+    Cmts.t -> Source.t -> ctx:Ast.t -> first:bool -> value_binding -> t
 
-    Can be rewritten as:
+  val of_value_bindings :
+    Cmts.t -> Source.t -> ctx:Ast.t -> value_binding list -> t list
 
-    {[ let f : type r s. r s t = e ]} *)
+  val of_binding_ops :
+    Cmts.t -> Source.t -> ctx:Ast.t -> binding_op list -> t list
+end

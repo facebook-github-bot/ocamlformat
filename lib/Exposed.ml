@@ -9,8 +9,7 @@
 (*                                                                        *)
 (**************************************************************************)
 
-open Migrate_ast
-open Parsetree
+open Extended_ast
 
 module Left = struct
   let rec core_type typ =
@@ -51,8 +50,8 @@ module Right = struct
     | {pext_kind; _} -> (
       match pext_kind with
       | Pext_rebind _ -> false
-      | Pext_decl (_, Some _result) -> false
-      | Pext_decl (args, None) -> constructor_arguments args )
+      | Pext_decl (_, _, Some _result) -> false
+      | Pext_decl (_, args, None) -> constructor_arguments args )
 
   let constructor_declaration = function
     | {pcd_attributes= _ :: _; _} -> false
@@ -119,8 +118,8 @@ module Right = struct
     | Psig_typext te -> type_extension te
     | Psig_exception te -> type_exception te
     | Psig_module _ | Psig_modsubst _ | Psig_recmodule _ | Psig_modtype _
-     |Psig_open _ | Psig_include _ | Psig_class _ | Psig_class_type _
-     |Psig_attribute _ | Psig_extension _ ->
+     |Psig_modtypesubst _ | Psig_open _ | Psig_include _ | Psig_class _
+     |Psig_class_type _ | Psig_attribute _ | Psig_extension _ ->
         false
 
   let payload = function

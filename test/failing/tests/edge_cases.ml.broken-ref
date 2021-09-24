@@ -1,0 +1,5 @@
+ocamlformat: ignoring "tests/edge_cases.ml" (syntax error)
+File "tests/edge_cases.ml", line 90, characters 4-12:
+90 |     function (_ : [ `c ]) -> d
+         ^^^^^^^^
+Error: Syntax error

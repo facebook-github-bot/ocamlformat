@@ -1,11 +1,16 @@
+(include dune.inc)
+
 (rule
- (deps .ocamlformat)
+ (deps
+  (source_tree .))
+ (package ocamlformat)
  (action
-   (with-outputs-to list_and_comments.ml.output
-     (run %{bin:ocamlformat} %{dep:list_and_comments.ml}))))
+  (with-stdout-to
+   dune.inc.gen
+   (run ./gen/gen.exe))))
 
 (rule
  (alias runtest)
- (deps list_and_comments.ml.broken-ref list_and_comments.ml.output)
+ (package ocamlformat)
  (action
-  (diff list_and_comments.ml.broken-ref list_and_comments.ml.output)))
+  (diff dune.inc dune.inc.gen)))

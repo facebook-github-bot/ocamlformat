@@ -24,12 +24,11 @@
     are multiple Ast terms with the same location. *)
 
 module Format = Format_
-open Migrate_ast
 
 type t
 
 val init :
-  'a Mapper.fragment -> debug:bool -> Source.t -> 'a -> Cmt.t list -> t
+  'a Extended_ast.t -> debug:bool -> Source.t -> 'a -> Cmt.t list -> t
 (** [init fragment source x comments] associates each comment in [comments]
     with a source location appearing in [x]. It uses [Source] to help resolve
     ambiguities. Initializes the state used by the [fmt] functions. *)
@@ -39,6 +38,13 @@ val relocate :
 (** [relocate src before after] moves (changes the association with
     locations) comments before [src] to [before] and comments after [src] to
     [after]. *)
+
+val relocate_wrongfully_attached_cmts :
+  t -> Source.t -> Extended_ast.expression -> unit
+(** [relocate_wrongfully_attached_cmts] relocates wrongfully attached
+    comments, e.g. comments that should be attached to the whole
+    pattern-matching expressions ([match-with] or [try-with] expressions) but
+    are wrongfully attached to the matched expression. *)
 
 val fmt_before :
      t
@@ -75,6 +81,26 @@ val fmt_within :
 (** [fmt_within loc] formats the comments associated with [loc] that appear
     within [loc]. *)
 
+module Toplevel : sig
+  val fmt_before :
+       t
+    -> Conf.t
+    -> fmt_code:(Conf.t -> string -> (Fmt.t, unit) Result.t)
+    -> Location.t
+    -> Fmt.t
+  (** [fmt_before loc] formats the comments associated with [loc] that appear
+      before [loc]. *)
+
+  val fmt_after :
+       t
+    -> Conf.t
+    -> fmt_code:(Conf.t -> string -> (Fmt.t, unit) Result.t)
+    -> Location.t
+    -> Fmt.t
+  (** [fmt_after loc] formats the comments associated with [loc] that appear
+      after [loc]. *)
+end
+
 val drop_inside : t -> Location.t -> unit
 
 val drop_before : t -> Location.t -> t
@@ -100,6 +126,11 @@ val diff :
   Conf.t -> Cmt.t list -> Cmt.t list -> (string, string) Either.t Sequence.t
 (** Difference between two lists of comments. *)
 
-val preserve : (t -> Fmt.t) -> t -> string
-(** [preserve fmt_x x] formats like [fmt_x x] but returns a string and does
-    not consume comments from the internal state. *)
+type layout_cache_key =
+  | Arg of Asttypes.arg_label * Parsetree.expression
+  | Pattern of Parsetree.pattern
+  | Expression of Parsetree.expression
+
+val preserve : cache_key:layout_cache_key -> (unit -> Fmt.t) -> t -> string
+(** [preserve f t] formats like [f ()] but returns a string and does not
+    consume comments from [t]. *)

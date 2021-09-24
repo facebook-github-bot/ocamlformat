@@ -11,12 +11,12 @@
 
 (** Format OCaml Ast *)
 
-val fmt_fragment :
-     'a list Migrate_ast.Mapper.fragment
+val fmt_ast :
+     'a Extended_ast.t
   -> debug:bool
   -> Source.t
   -> Cmts.t
   -> Conf.t
-  -> 'a list
+  -> 'a
   -> Fmt.t
 (** Format a fragment. *)

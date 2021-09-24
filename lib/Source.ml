@@ -10,192 +10,106 @@
 (**************************************************************************)
 
 open Migrate_ast
+open Extended_ast
 
 (** Concrete syntax. *)
-type t = string
+type t = {text: string; tokens: (Parser.token * Location.t) array}
 
-let create s = s
+let create ~text ~tokens =
+  let tokens =
+    List.filter tokens ~f:(fun (tok, _) ->
+        match tok with Parser.EOL | Parser.EOF -> false | _ -> true )
+  in
+  {text; tokens= Array.of_list tokens}
 
-let position_before t (pos : Lexing.position) =
-  let is_closing c =
-    Char.equal c ')' || Char.equal c ']' || Char.equal c '}'
-  in
-  let maybe_check_alphanum c =
-    if Char.is_alphanum t.[pos.pos_cnum] then false else Char.is_alphanum c
-  in
-  let f _ c =
-    maybe_check_alphanum c || Char.is_whitespace c || is_closing c
-  in
-  let pos_cnum_opt = String.rfindi t ~pos:pos.pos_cnum ~f in
-  Option.map pos_cnum_opt ~f:(fun x -> {pos with pos_cnum= x + 1})
+let string_at t (l : Location.t) =
+  let pos = l.loc_start.Lexing.pos_cnum
+  and len = Position.distance l.loc_start l.loc_end in
+  String.sub t.text ~pos ~len
 
-let string_between t (p1 : Lexing.position) (p2 : Lexing.position) =
-  let pos = p1.pos_cnum in
-  let len = Position.distance p1 p2 in
-  if
-    len < 0 || pos < 0
-    (* can happen e.g. if comment is within a parenthesized expression *)
-  then None
-  else if
-    String.length t < pos + len
-    (* can happen e.g. if source is not available *)
-  then None
-  else Some (String.sub t ~pos ~len)
+let find_token t k pos =
+  Array.binary_search t.tokens
+    ~compare:(fun (_, elt) pos -> Position.compare elt.Location.loc_start pos)
+    k pos
 
-(** Lines between [p1] and [p2]. Lines are represented their (offset, length)
-    in the source. The first and last line (containing [p1] and [p2]) are
-    ignored. *)
-let lines_between t (p1 : Lexing.position) (p2 : Lexing.position) =
-  let rec loop acc off lnum =
-    if lnum >= p2.pos_lnum then acc (* ignore last line *)
-    else
-      match String.index_from t off '\n' with
-      | None -> acc (* ignore last line *)
-      | Some endl -> loop ((off, endl - off) :: acc) (endl + 1) (lnum + 1)
-  in
-  (* ignore first line *)
-  match String.index_from t p1.pos_cnum '\n' with
+let find_first_token_on_line t line =
+  match
+    Array.binary_search t.tokens
+      ~compare:(fun (_, elt) -> Int.compare elt.Location.loc_start.pos_lnum)
+      `First_equal_to line
+  with
+  | None -> None
+  | Some i when i >= Array.length t.tokens -> None
+  | Some i -> Some t.tokens.(i)
+
+let tokens_between (t : t) ~filter loc_start loc_end =
+  match find_token t `First_greater_than_or_equal_to loc_start with
   | None -> []
-  | Some endl -> loop [] (endl + 1) (p1.pos_lnum + 1)
+  | Some i ->
+      let rec loop i acc =
+        if i >= Array.length t.tokens then List.rev acc
+        else
+          let ((tok, tok_loc) as x) = t.tokens.(i) in
+          if Position.compare tok_loc.Location.loc_end loc_end > 0 then
+            List.rev acc
+          else
+            let acc = if filter tok then x :: acc else acc in
+            loop (i + 1) acc
+      in
+      loop i []
 
-(** Returns the index of the first char that [f] match. Only consider [len]
-    characters starting at [pos]. *)
-let string_lcontains ~pos ~len s ~f =
-  let end_ = pos + len in
-  let rec loop i =
-    if i >= end_ then None else if f s.[i] then Some i else loop (i + 1)
+let empty_line_between (t : t) p1 p2 =
+  let l = tokens_between t ~filter:(function _ -> true) p1 p2 in
+  let rec loop (prev : Lexing.position) (l : (_ * Location.t) list) =
+    match l with
+    | [] -> p2.pos_lnum - prev.pos_lnum > 1
+    | (_tok, x) :: xs ->
+        x.loc_start.pos_lnum - prev.pos_lnum > 1 || loop x.loc_end xs
   in
-  loop pos
+  loop p1 l
 
-let empty_line_between t p1 p2 =
-  let non_whitespace c = not (Char.is_whitespace c) in
-  let is_line_empty (off, len) =
-    Option.is_none (string_lcontains ~pos:off ~len t ~f:non_whitespace)
-  in
-  Lexing.(p2.pos_lnum - p1.pos_lnum) > 1
-  && List.exists (lines_between t p1 p2) ~f:is_line_empty
-
-let sub t ~pos ~len =
-  if String.length t < pos + len || pos < 0 || len < 0 then ""
-  else String.sub t ~pos ~len
-
-let string_at t loc_start loc_end =
-  let pos = loc_start.Lexing.pos_cnum
-  and len = Position.distance loc_start loc_end in
-  sub t ~pos ~len
-
-let has_cmt_same_line_after t (loc : Location.t) =
-  let loc_start = {loc.loc_end with pos_cnum= loc.loc_end.pos_cnum} in
-  let loc_end = {loc.loc_end with pos_cnum= loc_start.pos_cnum + 20} in
-  let str = string_at t loc_start loc_end in
-  if String.is_empty str then false
-  else if Char.equal str.[0] '\n' then false
-  else
-    let str = String.lstrip str in
-    String.is_prefix str ~prefix:"(*"
-
-let lexbuf_set_pos lexbuf pos =
-  lexbuf.Lexing.lex_abs_pos <- pos.Lexing.pos_cnum ;
-  lexbuf.lex_curr_p <- pos
-
-let tokens_between t ~filter loc_start loc_end =
-  let s = string_at t loc_start loc_end in
-  let lexbuf = Lexing.from_string s in
-  lexbuf_set_pos lexbuf loc_start ;
-  let rec loop acc =
-    match Lexer.token lexbuf with
-    | Parser.EOF -> List.rev acc
-    | tok ->
-        if filter tok then loop ((tok, Location.of_lexbuf lexbuf) :: acc)
-        else loop acc
-  in
-  loop []
-
-let tokens_at t ~filter (l : Location.t) =
+let tokens_at t ~filter (l : Location.t) : (Parser.token * Location.t) list =
   tokens_between t ~filter l.loc_start l.loc_end
 
-let find_after t f (loc : Location.t) =
-  let pos_start = loc.loc_end in
-  let lexbuf =
-    let pos = ref pos_start.pos_cnum in
-    Lexing.from_function (fun bytes available ->
-        let to_write = min (String.length t - !pos) available in
-        Bytes.From_string.blit ~src:t ~src_pos:!pos ~dst:bytes ~dst_pos:0
-          ~len:to_write ;
-        pos := !pos + to_write ;
-        to_write)
-  in
-  lexbuf_set_pos lexbuf pos_start ;
-  let rec loop () =
-    match Lexer.token lexbuf with
-    | Parser.EOF -> None
-    | tok -> if f tok then Some (Location.of_lexbuf lexbuf) else loop ()
-  in
-  loop ()
+let find_token_before t ~filter pos =
+  match find_token t `Last_strictly_less_than pos with
+  | None -> None
+  | Some i ->
+      let rec loop i =
+        if i < 0 then None
+        else
+          let ((tok, _) as elt) = t.tokens.(i) in
+          if filter tok then Some elt else loop (i - 1)
+      in
+      loop i
 
-let extend_loc_to_include_attributes t (loc : Location.t)
-    (l : Parsetree.attributes) =
-  if
-    List.exists l ~f:(fun {attr_loc; attr_name; _} ->
-        Location.compare attr_name.loc attr_loc <> 0)
-  then
-    (* Starting with OCaml 4.08, attributes have locations *)
-    let loc_end =
-      List.fold l ~init:loc
-        ~f:(fun acc ({attr_loc; _} : Parsetree.attribute) ->
-          if Location.compare_end attr_loc acc <= 0 then acc else attr_loc)
-    in
-    if phys_equal loc_end loc then loc
-    else
-      { loc with
-        Location.loc_end=
-          {loc.loc_end with pos_cnum= loc_end.loc_end.pos_cnum} }
+let find_token_after t ~filter pos =
+  match find_token t `First_greater_than_or_equal_to pos with
+  | None -> None
+  | Some i ->
+      let rec loop i =
+        if i >= Array.length t.tokens then None
+        else
+          let ((tok, _) as elt) = t.tokens.(i) in
+          if filter tok then Some elt else loop (i + 1)
+      in
+      loop i
+
+let has_cmt_same_line_after t (loc : Location.t) =
+  match find_token_after t ~filter:(fun _ -> true) loc.loc_end with
+  | None -> false
+  | Some ((COMMENT _ | DOCSTRING _), nloc) ->
+      nloc.loc_start.pos_lnum = loc.loc_end.pos_lnum
+  | Some _ -> false
+
+let extend_loc_to_include_attributes (loc : Location.t) (l : attributes) =
+  let loc_end =
+    List.fold l ~init:loc ~f:(fun acc ({attr_loc; _} : attribute) ->
+        if Location.compare_end attr_loc acc <= 0 then acc else attr_loc )
+  in
+  if phys_equal loc_end loc then loc
   else
-    let last_loc =
-      List.fold l ~init:loc
-        ~f:(fun
-             (acc : Location.t)
-             ({attr_name= {loc; _}; attr_payload= payload; _} :
-               Parsetree.attribute)
-           ->
-          if loc.loc_ghost then acc
-          else
-            let loc =
-              match payload with
-              | PStr [] -> loc
-              | PStr l -> (List.last_exn l).Parsetree.pstr_loc
-              | PSig [] -> loc
-              | PSig l -> (List.last_exn l).Parsetree.psig_loc
-              | PTyp c -> c.ptyp_loc
-              | PPat (p, None) -> p.ppat_loc
-              | PPat (_, Some e) -> e.pexp_loc
-            in
-            if Location.compare_end loc acc <= 0 then acc else loc)
-    in
-    if phys_equal last_loc loc then loc
-    else
-      let loc =
-        { loc with
-          loc_end= {loc.loc_end with pos_cnum= last_loc.loc_end.pos_cnum} }
-      in
-      let count = ref 0 in
-      let l =
-        find_after t
-          (function
-            | RBRACKET ->
-                if !count = 0 then true else (Int.decr count ; false)
-            (* It is not clear that an LBRACKET* will ever happen in
-               practice, we're just being defensive here. *)
-            | LBRACKET | LBRACKETBAR | LBRACKETLESS | LBRACKETGREATER
-             |LBRACKETPERCENT | LBRACKETPERCENTPERCENT | LBRACKETAT
-             |LBRACKETATAT | LBRACKETATATAT ->
-                Int.incr count ; false
-            | _ -> false)
-          loc
-      in
-      match l with
-      | None -> impossible "Invariant of the token stream"
-      | Some e -> {loc with loc_end= e.loc_end}
+    {loc with loc_end= {loc.loc_end with pos_cnum= loc_end.loc_end.pos_cnum}}
 
 let contains_token_between t ~(from : Location.t) ~(upto : Location.t) tok =
   let filter = Poly.( = ) tok in
@@ -203,27 +117,34 @@ let contains_token_between t ~(from : Location.t) ~(upto : Location.t) tok =
   Source_code_position.ascending from upto < 0
   && not (List.is_empty (tokens_between t ~filter from upto))
 
-let is_long_pexp_open source {Parsetree.pexp_desc; _} =
+let is_long_pexp_open source {pexp_desc; _} =
   match pexp_desc with
   | Pexp_open ({popen_loc= from; _}, {pexp_loc= upto; _}) ->
       contains_token_between source ~from ~upto Parser.IN
   | _ -> false
 
-let is_long_pmod_functor source Parsetree.{pmod_desc; pmod_loc= from; _} =
+let is_long_functor_syntax (t : t) ~(from : Location.t) = function
+  | Unit -> false
+  | Named ({loc= _; _}, _) -> (
+    (* since 4.12 the functor keyword is just before the loc of the functor
+       parameter *)
+    match
+      find_token_before t
+        ~filter:(function COMMENT _ | DOCSTRING _ -> false | _ -> true)
+        from.loc_start
+    with
+    | Some (Parser.FUNCTOR, _) -> true
+    | _ -> false )
+
+let is_long_pmod_functor t {pmod_desc; pmod_loc= from; _} =
   match pmod_desc with
-  | Pmod_functor (Named ({loc= upto; _}, _), _) ->
-      contains_token_between source ~from ~upto Parser.FUNCTOR
+  | Pmod_functor (fp, _) -> is_long_functor_syntax t ~from fp
   | _ -> false
 
-let is_long_pmty_functor source Parsetree.{pmty_desc; pmty_loc= from; _} =
+let is_long_pmty_functor t {pmty_desc; pmty_loc= from; _} =
   match pmty_desc with
-  | Pmty_functor (Named ({loc= upto; _}, _), _) ->
-      contains_token_between source ~from ~upto Parser.FUNCTOR
+  | Pmty_functor (fp, _) -> is_long_functor_syntax t ~from fp
   | _ -> false
-
-let lexbuf_from_loc t (l : Location.t) =
-  let s = string_at t l.loc_start l.loc_end in
-  Lexing.from_string s
 
 let string_literal t mode (l : Location.t) =
   (* the location of a [string] might include surrounding comments and
@@ -235,7 +156,7 @@ let string_literal t mode (l : Location.t) =
         | Parser.STRING (_, _, None) -> true
         | Parser.LBRACKETAT | Parser.LBRACKETATAT | Parser.LBRACKETATATAT ->
             true
-        | _ -> false)
+        | _ -> false )
       l
   in
   match toks with
@@ -245,8 +166,9 @@ let string_literal t mode (l : Location.t) =
        | Parser.LBRACKETATAT, _
        | Parser.LBRACKETAT, _ )
        :: _ ->
-      Some (Literal_lexer.string mode (lexbuf_from_loc t loc))
-  | _ -> None
+      Option.value_exn ~message:"Parse error while reading string literal"
+        (Literal_lexer.string mode (string_at t loc))
+  | _ -> impossible "Pconst_string is only produced by string literals"
 
 let char_literal t (l : Location.t) =
   (* the location of a [char] might include surrounding comments and
@@ -258,7 +180,7 @@ let char_literal t (l : Location.t) =
         | Parser.CHAR _ -> true
         | Parser.LBRACKETAT | Parser.LBRACKETATAT | Parser.LBRACKETATATAT ->
             true
-        | _ -> false)
+        | _ -> false )
       l
   in
   match toks with
@@ -268,65 +190,48 @@ let char_literal t (l : Location.t) =
        | Parser.LBRACKETATAT, _
        | Parser.LBRACKETAT, _ )
        :: _ ->
-      Some (Literal_lexer.char (lexbuf_from_loc t loc))
-  | _ -> None
+      (Option.value_exn ~message:"Parse error while reading char literal")
+        (Literal_lexer.char (string_at t loc))
+  | _ -> impossible "Pconst_char is only produced by char literals"
 
 let begins_line ?(ignore_spaces = true) t (l : Location.t) =
-  let rec begins_line_ cnum =
-    cnum = 0
-    ||
-    let cnum = cnum - 1 in
-    match t.[cnum] with
-    | '\n' | '\r' -> true
-    | c when Char.is_whitespace c && ignore_spaces -> begins_line_ cnum
-    | _ -> false
-  in
-  begins_line_ l.loc_start.pos_cnum
+  if not ignore_spaces then Position.column l.loc_start = 0
+  else
+    match find_token_before t ~filter:(fun _ -> true) l.loc_start with
+    | None -> true
+    | Some (_, prev) ->
+        assert (Location.compare prev l < 0) ;
+        prev.loc_end.pos_lnum < l.loc_start.pos_lnum
 
 let ends_line t (l : Location.t) =
-  let len = String.length t in
-  let rec ends_line_ cnum =
-    if cnum >= len then true
-    else
-      match t.[cnum] with
-      | '\n' | '\r' -> true
-      | c when Char.is_whitespace c -> ends_line_ (cnum + 1)
-      | _ -> false
-  in
-  if Location.compare Location.none l = 0 then false
-  else ends_line_ l.loc_end.pos_cnum
+  match find_token_after t ~filter:(fun _ -> true) l.loc_end with
+  | None -> true
+  | Some (_, next) ->
+      assert (Location.compare next l > 0) ;
+      next.loc_start.pos_lnum > l.loc_end.pos_lnum
+
+let empty_line_before t (loc : Location.t) =
+  match find_token_before t ~filter:(fun _ -> true) loc.loc_start with
+  | Some (_, before) -> Location.line_difference before loc > 1
+  | None -> false
+
+let empty_line_after t (loc : Location.t) =
+  match find_token_after t ~filter:(fun _ -> true) loc.loc_end with
+  | Some (_, after) -> Location.line_difference loc after > 1
+  | None -> false
 
 let extension_using_sugar ~(name : string Location.loc)
-    ~(payload : Parsetree.expression) =
-  Source_code_position.ascending name.loc.loc_start
-    payload.pexp_loc.loc_start
-  > 0
+    ~(payload : Location.t) =
+  Source_code_position.ascending name.loc.loc_start payload.loc_start > 0
 
-let typed_expression (typ : Parsetree.core_type)
-    (expr : Parsetree.expression) =
-  if Location.compare_start typ.ptyp_loc expr.pexp_loc < 0 then `Type_first
-  else `Expr_first
-
-let typed_pattern (typ : Parsetree.core_type) (pat : Parsetree.pattern) =
-  if Location.compare_start typ.ptyp_loc pat.ppat_loc < 0 then `Type_first
-  else `Pat_first
-
-let loc_of_underscore t flds (ppat_loc : Location.t) =
-  let end_last_field =
-    match List.last flds with
-    | Some (_, p) -> p.Parsetree.ppat_loc.loc_end
-    | None -> ppat_loc.loc_start
-  in
-  let loc_underscore = {ppat_loc with loc_start= end_last_field} in
-  let filter = function Parser.UNDERSCORE -> true | _ -> false in
-  let tokens = tokens_at t ~filter loc_underscore in
-  Option.map (List.hd tokens) ~f:snd
+let type_constraint_is_first typ loc =
+  Location.compare_start typ.ptyp_loc loc < 0
 
 let locs_of_interval source loc =
   let toks =
     tokens_at source loc ~filter:(function
       | CHAR _ | DOTDOT | INT _ | STRING _ | FLOAT _ -> true
-      | _ -> false)
+      | _ -> false )
   in
   match toks with
   | [ ((CHAR _ | INT _ | STRING _ | FLOAT _), loc1)
@@ -338,23 +243,23 @@ let locs_of_interval source loc =
         "Ppat_interval is only produced by the sequence of 3 tokens: \
          CONSTANT-DOTDOT-CONSTANT "
 
-let loc_of_constant t loc (cst : Parsetree.constant) =
-  let loc_of_tok filter =
-    match tokens_at t loc ~filter with [(_, loc)] -> loc | _ -> loc
+let loc_of_constant t loc (cst : constant) =
+  let filter : Parser.token -> bool =
+    match cst with
+    | Pconst_string _ -> ( function STRING _ -> true | _ -> false )
+    | Pconst_char _ -> ( function CHAR _ -> true | _ -> false )
+    | Pconst_integer _ -> ( function INT _ -> true | _ -> false )
+    | Pconst_float _ -> ( function FLOAT _ -> true | _ -> false )
   in
-  match cst with
-  | Pconst_string _ -> loc_of_tok (function STRING _ -> true | _ -> false)
-  | Pconst_char _ -> loc_of_tok (function CHAR _ -> true | _ -> false)
-  | Pconst_integer _ -> loc_of_tok (function INT _ -> true | _ -> false)
-  | Pconst_float _ -> loc_of_tok (function FLOAT _ -> true | _ -> false)
+  match tokens_at t loc ~filter with [(_, loc)] -> loc | _ -> loc
 
-let loc_of_pat_constant t (p : Parsetree.pattern) =
+let loc_of_pat_constant t (p : pattern) =
   match p.ppat_desc with
   | Ppat_constant cst ->
       loc_of_constant t (Location.smallest p.ppat_loc p.ppat_loc_stack) cst
   | _ -> impossible "loc_of_pat_constant is only called on constants"
 
-let loc_of_expr_constant t (e : Parsetree.expression) =
+let loc_of_expr_constant t (e : expression) =
   match e.pexp_desc with
   | Pexp_constant cst ->
       loc_of_constant t (Location.smallest e.pexp_loc e.pexp_loc_stack) cst
@@ -364,6 +269,11 @@ let is_quoted_string t loc =
   let toks =
     tokens_at t loc ~filter:(function
       | QUOTED_STRING_ITEM _ | QUOTED_STRING_EXPR _ -> true
-      | _ -> false)
+      | _ -> false )
   in
   not (List.is_empty toks)
+
+let loc_of_first_token_at t loc kwd =
+  match tokens_at t loc ~filter:(Poly.( = ) kwd) with
+  | [] -> None
+  | (_, loc) :: _ -> Some loc

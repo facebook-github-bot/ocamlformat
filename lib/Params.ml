@@ -10,29 +10,80 @@
 (**************************************************************************)
 
 module Format = Format_
-open Migrate_ast
+module Location = Migrate_ast.Location
+open Extended_ast
 open Fmt
 
 let parens_or_begin_end (c : Conf.t) source ~loc =
   match c.exp_grouping with
   | `Parens -> `Parens
-  | `Preserve ->
-      let str =
-        String.lstrip
-          (Source.string_at source loc.Location.loc_start loc.loc_end)
-      in
-      if String.is_prefix ~prefix:"begin" str then `Begin_end else `Parens
+  | `Preserve -> (
+    match
+      Source.find_token_after source
+        ~filter:(fun _ -> true)
+        loc.Location.loc_start
+    with
+    | Some (BEGIN, _) -> `Begin_end
+    | None | Some _ -> `Parens )
 
-let wrap_exp (c : Conf.t) ?(disambiguate = false) ?(fits_breaks = true)
-    ~parens ~loc source k =
-  match parens_or_begin_end c source ~loc with
-  | `Parens when disambiguate && c.Conf.disambiguate_non_breaking_match ->
-      wrap_if_fits_or parens "(" ")" k
-  | (`Parens | `Begin_end) when not parens -> k
-  | `Parens when fits_breaks -> wrap_fits_breaks ~space:false c "(" ")" k
-  | `Parens -> wrap "(" ")" k
-  | `Begin_end ->
-      vbox 2 (wrap "begin" "end" (wrap_k (break 1 0) (break 1000 ~-2) k))
+let parens_if parens (c : Conf.t) ?(disambiguate = false) k =
+  if disambiguate && c.Conf.disambiguate_non_breaking_match then
+    wrap_if_fits_or parens "(" ")" k
+  else if not parens then k
+  else
+    match c.Conf.indicate_multiline_delimiters with
+    | `Space ->
+        Fmt.fits_breaks "(" "(" $ k $ Fmt.fits_breaks ")" ~hint:(1, 0) ")"
+    | `Closing_on_separate_line ->
+        Fmt.fits_breaks "(" "(" $ k $ Fmt.fits_breaks ")" ~hint:(1000, 0) ")"
+    | `No -> wrap "(" ")" k
+
+let parens c ?disambiguate k = parens_if true c ?disambiguate k
+
+module Exp = struct
+  module Infix_op_arg = struct
+    let wrap (c : Conf.t) ?(parens_nested = false) ~ext ~parens ~loc source k
+        =
+      match parens_or_begin_end c source ~loc with
+      | `Parens when parens || parens_nested ->
+          let opn, hint, cls =
+            if parens || Poly.(c.infix_precedence = `Parens) then
+              match c.indicate_multiline_delimiters with
+              | `Space -> ("( ", Some (1, 0), ")")
+              | `No -> ("(", Some (0, 0), ")")
+              | `Closing_on_separate_line -> ("(", Some (1000, 0), ")")
+            else ("", None, "")
+          in
+          wrap_if_k (parens || parens_nested) (Fmt.fits_breaks "(" opn)
+            (Fmt.fits_breaks ")" ?hint cls)
+            k
+      | `Parens -> k
+      | `Begin_end ->
+          vbox 2
+            (wrap_k
+               (str "begin" $ ext)
+               (str "end")
+               (wrap_k (break 1 0) (break 1000 ~-2) k) )
+  end
+
+  let wrap (c : Conf.t) ?(disambiguate = false) ?(fits_breaks = true)
+      ?(offset_closing_paren = 0) ~parens ~loc source k =
+    match parens_or_begin_end c source ~loc with
+    | `Parens when disambiguate && c.Conf.disambiguate_non_breaking_match ->
+        wrap_if_fits_or parens "(" ")" k
+    | (`Parens | `Begin_end) when not parens -> k
+    | `Parens when fits_breaks -> wrap_fits_breaks ~space:false c "(" ")" k
+    | `Parens -> (
+      match c.Conf.indicate_multiline_delimiters with
+      | `Space ->
+          Fmt.fits_breaks "(" "(" $ k $ Fmt.fits_breaks ")" ~hint:(1, 0) ")"
+      | `Closing_on_separate_line ->
+          Fmt.fits_breaks "(" "(" $ k
+          $ Fmt.fits_breaks ")" ~hint:(1000, offset_closing_paren) ")"
+      | `No -> wrap "(" ")" k )
+    | `Begin_end ->
+        vbox 2 (wrap "begin" "end" (wrap_k (break 1 0) (break 1000 ~-2) k))
+end
 
 let get_or_pattern_sep ?(cmts_before = false) ?(space = false) (c : Conf.t)
     ~ctx =
@@ -59,9 +110,28 @@ type cases =
   ; box_pattern_arrow: Fmt.t -> Fmt.t
   ; break_before_arrow: Fmt.t
   ; break_after_arrow: Fmt.t
-  ; break_after_opening_paren: Fmt.t }
+  ; open_paren_branch: Fmt.t
+  ; break_after_opening_paren: Fmt.t
+  ; close_paren_branch: Fmt.t }
 
-let get_cases (c : Conf.t) ~first ~indent ~parens_here =
+let get_cases (c : Conf.t) ~first ~indent ~parens_branch source ~loc =
+  let grouping = parens_or_begin_end c source ~loc in
+  let open_paren_branch =
+    fmt_if parens_branch
+      (match grouping with `Parens -> " (" | `Begin_end -> "@;<1 0>begin")
+  in
+  let close_paren_branch =
+    fmt_if_k parens_branch
+      ( match grouping with
+      | `Parens -> (
+        match c.indicate_multiline_delimiters with
+        | `Space -> fmt "@ )"
+        | `No -> fmt "@,)"
+        | `Closing_on_separate_line -> fmt "@;<1000 -2>)" )
+      | `Begin_end ->
+          let offset = match c.break_cases with `Nested -> 0 | _ -> -2 in
+          fits_breaks " end" ~level:1 ~hint:(1000, offset) "end" )
+  in
   match c.break_cases with
   | `Fit ->
       { leading_space= fmt_if (not first) "@ "
@@ -70,31 +140,39 @@ let get_cases (c : Conf.t) ~first ~indent ~parens_here =
       ; box_pattern_arrow= hovbox 2
       ; break_before_arrow= fmt "@;<1 0>"
       ; break_after_arrow= noop
-      ; break_after_opening_paren= fmt "@ " }
+      ; open_paren_branch
+      ; break_after_opening_paren= fmt "@ "
+      ; close_paren_branch }
   | `Nested ->
       { leading_space= fmt_if (not first) "@ "
       ; bar= fmt_or_k first (if_newline "| ") (str "| ")
       ; box_all= Fn.id
       ; box_pattern_arrow= hovbox 0
       ; break_before_arrow= fmt "@;<1 2>"
-      ; break_after_arrow= fmt_if (not parens_here) "@;<0 3>"
-      ; break_after_opening_paren= fmt_or (indent > 2) "@;<1 4>" "@;<1 2>" }
+      ; break_after_arrow= fmt_if (not parens_branch) "@;<0 3>"
+      ; open_paren_branch
+      ; break_after_opening_paren= fmt_or (indent > 2) "@;<1 4>" "@;<1 2>"
+      ; close_paren_branch }
   | `Fit_or_vertical ->
       { leading_space= break_unless_newline 1000 0
       ; bar= str "| "
       ; box_all= hovbox indent
       ; box_pattern_arrow= hovbox 0
       ; break_before_arrow= fmt "@;<1 2>"
-      ; break_after_arrow= fmt_if (not parens_here) "@;<0 3>"
-      ; break_after_opening_paren= fmt "@ " }
+      ; break_after_arrow= fmt_if (not parens_branch) "@;<0 3>"
+      ; open_paren_branch
+      ; break_after_opening_paren= fmt "@ "
+      ; close_paren_branch }
   | `Toplevel | `All ->
       { leading_space= break_unless_newline 1000 0
       ; bar= str "| "
       ; box_all= hvbox indent
       ; box_pattern_arrow= hovbox 0
       ; break_before_arrow= fmt "@;<1 2>"
-      ; break_after_arrow= fmt_if (not parens_here) "@;<0 3>"
-      ; break_after_opening_paren= fmt "@ " }
+      ; break_after_arrow= fmt_if (not parens_branch) "@;<0 3>"
+      ; open_paren_branch
+      ; break_after_opening_paren= fmt "@ "
+      ; close_paren_branch }
 
 let wrap_collec c ~space_around opn cls =
   if space_around then wrap_k (str opn $ char ' ') (break 1 0 $ str cls)
@@ -191,8 +269,8 @@ let collection_expr (c : Conf.t) ~space_around opn cls =
               hvbox 0
                 (wrap_k (str opn) (str cls)
                    ( break space (String.length opn + 1)
-                   $ box_collec c 0 k $ break space 0 ))
-            else box_collec c 0 (wrap_collec c ~space_around opn cls k))
+                   $ box_collec c 0 k $ break space 0 ) )
+            else box_collec c 0 (wrap_collec c ~space_around opn cls k) )
       ; sep_before= break 0 offset $ str "; "
       ; sep_after_non_final= noop
       ; sep_after_final= noop }
@@ -202,8 +280,8 @@ let collection_expr (c : Conf.t) ~space_around opn cls =
             if dock then
               hvbox 0
                 (wrap_k (str opn) (str cls)
-                   (break space 2 $ box_collec c 0 k $ break space 0))
-            else box_collec c 0 (wrap_collec c ~space_around opn cls k))
+                   (break space 2 $ box_collec c 0 k $ break space 0) )
+            else box_collec c 0 (wrap_collec c ~space_around opn cls k) )
       ; sep_before= noop
       ; sep_after_non_final=
           fmt_or_k dock (fmt ";@;<1 0>")
@@ -283,8 +361,10 @@ let get_if_then_else (c : Conf.t) ~first ~last ~parens ~parens_bch
     match (exp_grouping_bch, imd) with
     | `Parens, `Space -> wrap_k (brk oh_space) (brk ch_sp)
     | `Parens, `No -> wrap_k (brk oh_other) noop
-    | `Parens, `Closing_on_separate_line | `Begin_end, _ ->
-        wrap_k (brk oh_other) (brk ch_sl)
+    | `Parens, `Closing_on_separate_line -> wrap_k (brk oh_other) (brk ch_sl)
+    | `Begin_end, _ ->
+        let _, offset = ch_sl in
+        wrap_k (brk oh_other) (break 1000 offset)
   in
   let cond () =
     match xcond with
@@ -298,7 +378,7 @@ let get_if_then_else (c : Conf.t) ~first ~last ~parens ~parens_bch
               (if parens then 0 else 2)
               ( fmt_if (not first) "else "
               $ str "if"
-              $ fmt_if_k first fmt_extension_suffix
+              $ fmt_if_k first (fmt_opt fmt_extension_suffix)
               $ fmt_attributes $ fmt "@ " $ fmt_cond xcnd )
           $ fmt "@ then" )
     | None -> str "else"
@@ -319,7 +399,7 @@ let get_if_then_else (c : Conf.t) ~first ~last ~parens ~parens_bch
             ~wrap_breaks:
               (get_parens_breaks
                  ~opn_hint:((1, 0), (0, 0))
-                 ~cls_hint:((1, 0), (1000, -2)))
+                 ~cls_hint:((1, 0), (1000, -2)) )
       ; expr_pro= None
       ; expr_eol= None
       ; break_end_branch= noop
@@ -348,12 +428,12 @@ let get_if_then_else (c : Conf.t) ~first ~last ~parens ~parens_bch
             ~wrap_breaks:
               (get_parens_breaks
                  ~opn_hint:((1, 2), (0, 2))
-                 ~cls_hint:((1, 0), (1000, 0)))
+                 ~cls_hint:((1, 0), (1000, 0)) )
       ; expr_pro=
           Some
             (fmt_if_k
                (not (Location.is_single_line expr_loc c.margin))
-               (break_unless_newline 1000 2))
+               (break_unless_newline 1000 2) )
       ; expr_eol= Some (fmt "@;<1 2>")
       ; break_end_branch= noop
       ; space_between_branches=
@@ -367,20 +447,21 @@ let get_if_then_else (c : Conf.t) ~first ~last ~parens ~parens_bch
           opt xcond (fun xcnd ->
               hvbox 2
                 ( fmt_or_k first
-                    (str "if" $ fmt_extension_suffix)
+                    (str "if" $ fmt_opt fmt_extension_suffix)
                     (str "else if")
-                $ fmt_attributes $ str " " $ fmt_cond xcnd )
-              $ fmt "@ ")
+                $ fmt_attributes
+                $ fmt_or (Option.is_some fmt_extension_suffix) "@ " " "
+                $ fmt_cond xcnd )
+              $ fmt "@ " )
       ; box_keyword_and_expr=
-          (fun k ->
-            hvbox 2 (fmt_or (Option.is_some xcond) "then" "else" $ k))
+          (fun k -> hvbox 2 (fmt_or (Option.is_some xcond) "then" "else" $ k))
       ; branch_pro= fmt_or parens_bch " " "@ "
       ; wrap_parens=
           wrap_parens
             ~wrap_breaks:
               (get_parens_breaks
                  ~opn_hint:((1, 0), (0, 0))
-                 ~cls_hint:((1, 0), (1000, -2)))
+                 ~cls_hint:((1, 0), (1000, -2)) )
       ; expr_pro= None
       ; expr_eol= None
       ; break_end_branch= noop

@@ -15,13 +15,29 @@
    (:standard -noassert))))
 
 (rule
- (with-stdout-to
-  ocamlformat-help.actual
-  (run ocamlformat --help=plain)))
+ (action
+  (with-stdout-to
+   ocamlformat-help.actual
+   (run %{bin:ocamlformat} --help=plain)))
+ (package ocamlformat))
 
 (rule
  (alias runtest)
+ (package ocamlformat)
  (action
   (diff ocamlformat-help.txt ocamlformat-help.actual)))
+
+(rule
+ (action
+  (with-stdout-to
+   ocamlformat-rpc-help.actual
+   (run %{bin:ocamlformat-rpc} --help=plain)))
+ (package ocamlformat-rpc))
+
+(rule
+ (alias runtest)
+ (package ocamlformat-rpc)
+ (action
+  (diff ocamlformat-rpc-help.txt ocamlformat-rpc-help.actual)))
 
 (data_only_dirs test-extra)

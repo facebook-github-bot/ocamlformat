@@ -64,7 +64,16 @@ module Make (C : CONFIG) : sig
   val flag : default:bool -> bool option_decl
 
   val any :
-    'a Cmdliner.Arg.conv -> default:'a -> docv:string -> 'a option_decl
+       ?default_doc:string
+    -> 'a Cmdliner.Arg.conv
+    -> default:'a
+    -> docv:string
+    -> 'a option_decl
+
+  val removed_option :
+    names:string list -> version:string -> msg:string -> unit
+  (** Declare an option as removed. Using such an option will result in an
+      helpful error including [msg] and [version]. *)
 
   val default : 'a t -> 'a
 

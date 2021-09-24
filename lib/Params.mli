@@ -10,16 +10,39 @@
 (**************************************************************************)
 
 module Format = Format_
+open Extended_ast
 
-val wrap_exp :
-     Conf.t
-  -> ?disambiguate:bool
-  -> ?fits_breaks:bool
-  -> parens:bool
-  -> loc:Location.t
-  -> Source.t
-  -> Fmt.t
-  -> Fmt.t
+val parens_if : bool -> Conf.t -> ?disambiguate:bool -> Fmt.t -> Fmt.t
+
+val parens : Conf.t -> ?disambiguate:bool -> Fmt.t -> Fmt.t
+
+module Exp : sig
+  module Infix_op_arg : sig
+    val wrap :
+         Conf.t
+      -> ?parens_nested:bool
+      -> ext:Fmt.t
+      -> parens:bool
+      -> loc:Location.t
+      -> Source.t
+      -> Fmt.t
+      -> Fmt.t
+  end
+
+  val wrap :
+       Conf.t
+    -> ?disambiguate:bool
+    -> ?fits_breaks:bool
+    -> ?offset_closing_paren:int
+         (** Offset of the closing paren in case the line has been broken and
+             the option [indicate-multiline-delimiters] is set to
+             [closing-on-separate-line]. By default the offset is 0. *)
+    -> parens:bool
+    -> loc:Location.t
+    -> Source.t
+    -> Fmt.t
+    -> Fmt.t
+end
 
 val get_or_pattern_sep :
   ?cmts_before:bool -> ?space:bool -> Conf.t -> ctx:Ast.t -> Fmt.t
@@ -31,10 +54,18 @@ type cases =
   ; box_pattern_arrow: Fmt.t -> Fmt.t
   ; break_before_arrow: Fmt.t
   ; break_after_arrow: Fmt.t
-  ; break_after_opening_paren: Fmt.t }
+  ; open_paren_branch: Fmt.t
+  ; break_after_opening_paren: Fmt.t
+  ; close_paren_branch: Fmt.t }
 
 val get_cases :
-  Conf.t -> first:bool -> indent:int -> parens_here:bool -> cases
+     Conf.t
+  -> first:bool
+  -> indent:int
+  -> parens_branch:bool
+  -> Source.t
+  -> loc:Location.t
+  -> cases
 
 val wrap_tuple :
   Conf.t -> parens:bool -> no_parens_if_break:bool -> Fmt.t -> Fmt.t
@@ -93,12 +124,12 @@ val get_if_then_else :
   -> parens:bool
   -> parens_bch:bool
   -> parens_prev_bch:bool
-  -> xcond:Migrate_ast.Parsetree.expression Ast.xt option
+  -> xcond:expression Ast.xt option
   -> expr_loc:Location.t
   -> bch_loc:Location.t
-  -> fmt_extension_suffix:Fmt.t
+  -> fmt_extension_suffix:Fmt.t option
   -> fmt_attributes:Fmt.t
-  -> fmt_cond:(Migrate_ast.Parsetree.expression Ast.xt -> Fmt.t)
+  -> fmt_cond:(expression Ast.xt -> Fmt.t)
   -> Source.t
   -> if_then_else
 

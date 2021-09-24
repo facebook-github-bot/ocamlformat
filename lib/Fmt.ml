@@ -13,29 +13,76 @@
 
 module Format = Format_
 
-type s = (unit, Format.formatter, unit) format
+(** Define the core type and minimal combinators.
 
-type t = Format.formatter -> unit
+    Other higher level functions like [fmt_if] or [list_pn] are implemented
+    on top of this. The goal is to be able to modify the underlying
+    abstraction without modifying too many places in the [Fmt] module. *)
+module T : sig
+  type t
+
+  val ( $ ) : t -> t -> t
+  (** Sequence *)
+
+  val with_pp : (Format.formatter -> unit) -> t
+  (** Use an arbitrary pretty-printing function *)
+
+  val protect : t -> on_error:(exn -> unit) -> t
+  (** Exception handler *)
+
+  val lazy_ : (unit -> t) -> t
+  (** Defer the evaluation of some side effects until formatting happens.
+
+      This can matter if for example a list of [t] is built, and then only
+      some of them end up being displayed. Using [lazy_] ensures that only
+      side effects for the displayed elements have run.
+
+      See [tests_lazy] in [Test_fmt]. *)
+
+  val eval : Format.formatter -> t -> unit
+  (** Main function to evaluate a term using an actual formatter. *)
+end = struct
+  type t = (Format.formatter -> unit) Staged.t
+
+  let ( $ ) f g =
+    let f = Staged.unstage f in
+    let g = Staged.unstage g in
+    Staged.stage (fun x -> f x ; g x)
+
+  let with_pp f = Staged.stage f
+
+  let eval fs f =
+    let f = Staged.unstage f in
+    f fs
+
+  let protect t ~on_error =
+    let t = Staged.unstage t in
+    Staged.stage (fun fs ->
+        try t fs
+        with exn ->
+          Format.pp_print_flush fs () ;
+          on_error exn )
+
+  let lazy_ f =
+    Staged.stage (fun fs ->
+        let k = Staged.unstage (f ()) in
+        k fs )
+end
+
+include T
+
+type s = (unit, Format.formatter, unit) format
 
 type sp = Blank | Cut | Space | Break of int * int
 
-let ( $ ) f g x = f x ; g x
-
 let ( >$ ) f g x = f $ g x
 
-let set_margin n fs = Format.pp_set_geometry fs ~max_indent:n ~margin:(n + 1)
+let set_margin n =
+  with_pp (fun fs -> Format.pp_set_geometry fs ~max_indent:n ~margin:(n + 1))
 
 let max_indent = ref None
 
-let set_max_indent n (_ : Format.formatter) = max_indent := Some n
-
-let eval fs t = t fs
-
-let protect t ~on_error fs =
-  try t fs
-  with exn ->
-    Format.pp_print_flush fs () ;
-    on_error exn
+let set_max_indent n = with_pp (fun _ -> max_indent := Some n)
 
 (** Debug of formatting -------------------------------------------------*)
 
@@ -45,19 +92,38 @@ let pp_color_k color_code k fs =
 
 (** Break hints and format strings --------------------------------------*)
 
-let break n o fs = Format.pp_print_break fs n o
+let break n o = with_pp (fun fs -> Format.pp_print_break fs n o)
 
-let cbreak ~fits ~breaks fs = Format.pp_print_custom_break fs ~fits ~breaks
+let cbreak ~fits ~breaks =
+  with_pp (fun fs -> Format.pp_print_custom_break fs ~fits ~breaks)
 
-let noop (_ : Format.formatter) = ()
+let noop = with_pp (fun _ -> ())
 
-let fmt f fs = Format.fprintf fs f
+let sequence l =
+  let rec go l len =
+    match l with
+    | [] -> noop
+    | [x] -> x
+    | l ->
+        let a_len = len / 2 in
+        let b_len = len - a_len in
+        let a, b = List.split_n l a_len in
+        go a a_len $ go b b_len
+  in
+  go l (List.length l)
+
+let fmt f = with_pp (fun fs -> Format.fprintf fs f)
 
 (** Primitive types -----------------------------------------------------*)
 
-let char c fs = Format.pp_print_char fs c
+let char c = with_pp (fun fs -> Format.pp_print_char fs c)
 
-let str s fs = if not (String.is_empty s) then Format.pp_print_string fs s
+let utf8_length s =
+  Uuseg_string.fold_utf_8 `Grapheme_cluster (fun n _ -> n + 1) 0 s
+
+let str_as n s = with_pp (fun fs -> Format.pp_print_as fs n s)
+
+let str s = if String.is_empty s then noop else str_as (utf8_length s) s
 
 let sp = function
   | Blank -> char ' '
@@ -67,72 +133,72 @@ let sp = function
 
 (** Primitive containers ------------------------------------------------*)
 
-let opt o pp fs = Option.iter o ~f:(Fn.flip pp fs)
+let opt o f = Option.value_map ~default:noop ~f o
 
-let list_pn x1N pp fs =
+let list_pn x1N pp =
   match x1N with
-  | [] -> ()
-  | [x1] -> pp ~prev:None x1 ~next:None fs
+  | [] -> noop
+  | [x1] -> lazy_ (fun () -> pp ~prev:None x1 ~next:None)
   | x1 :: (x2 :: _ as x2N) ->
-      pp ~prev:None x1 ~next:(Some x2) fs ;
-      let rec list_pn_ fs prev = function
-        | [] -> ()
-        | [xI] -> pp ~prev:(Some prev) xI ~next:None fs
-        | xI :: (xJ :: _ as xJN) ->
-            pp ~prev:(Some prev) xI ~next:(Some xJ) fs ;
-            list_pn_ fs xI xJN
+      let l =
+        let rec aux (prev, acc) = function
+          | [] -> acc
+          | [xI] -> aux (xI, (Some prev, xI, None) :: acc) []
+          | xI :: (xJ :: _ as xJN) ->
+              aux (xI, (Some prev, xI, Some xJ) :: acc) xJN
+        in
+        aux (x1, [(None, x1, Some x2)]) x2N
       in
-      list_pn_ fs x1 x2N
+      List.rev_map l ~f:(fun (prev, x, next) ->
+          lazy_ (fun () -> pp ~prev x ~next) )
+      |> sequence
 
-let list_fl xs pp fs =
-  list_pn xs
-    (fun ~prev x ~next fs ->
-      pp ~first:(Option.is_none prev) ~last:(Option.is_none next) x fs)
-    fs
+let list_fl xs pp =
+  list_pn xs (fun ~prev x ~next ->
+      pp ~first:(Option.is_none prev) ~last:(Option.is_none next) x )
 
-let list xs sep pp fs =
-  let pp_sep fs () = Format.fprintf fs sep in
-  Format.pp_print_list ~pp_sep (fun fs x -> pp x fs) fs xs
+let list_k l sep f =
+  list_fl l (fun ~first:_ ~last x -> f x $ if last then noop else sep)
 
-let list_k xs pp_sep pp fs =
-  let pp_sep fs () = pp_sep fs in
-  Format.pp_print_list ~pp_sep (fun fs x -> pp x fs) fs xs
+let list xs sep pp = list_k xs (fmt sep) pp
 
 (** Conditional formatting ----------------------------------------------*)
 
-let fmt_if_k cnd k fs = if cnd then k fs
+let fmt_if_k cnd x = if cnd then x else noop
 
-let fmt_if cnd f fs = fmt_if_k cnd (fmt f) fs
+let fmt_if cnd f = fmt_if_k cnd (fmt f)
 
-let fmt_or_k cnd t_k f_k fs = if cnd then t_k fs else f_k fs
+let fmt_or_k cnd t f = if cnd then t else f
 
-let fmt_or cnd t f fs = fmt_or_k cnd (fmt t) (fmt f) fs
+let fmt_or cnd t f = fmt_or_k cnd (fmt t) (fmt f)
 
-let fmt_opt opt fs = match opt with Some k -> k fs | None -> ()
+let fmt_opt o = Option.value o ~default:noop
 
 (** Conditional on immediately following a line break -------------------*)
 
-let if_newline s fs = Format.pp_print_string_if_newline fs s
+let if_newline s = with_pp (fun fs -> Format.pp_print_string_if_newline fs s)
 
-let break_unless_newline n o fs = Format.pp_print_or_newline fs n o "" ""
+let break_unless_newline n o =
+  with_pp (fun fs -> Format.pp_print_or_newline fs n o "" "")
 
 (** Conditional on breaking of enclosing box ----------------------------*)
 
 type behavior = Fit | Break
 
+let fits_or_breaks ~level fits nspaces offset breaks =
+  with_pp (fun fs ->
+      Format.pp_print_fits_or_breaks fs ~level fits nspaces offset breaks )
+
 let fits_breaks ?force ?(hint = (0, Int.min_value)) ?(level = 0) fits breaks
-    fs =
+    =
   let nspaces, offset = hint in
   match force with
-  | Some Fit -> Format.pp_print_string fs fits
-  | Some Break ->
-      if offset >= 0 then Format.pp_print_break fs nspaces offset ;
-      Format.pp_print_string fs breaks
-  | None ->
-      Format.pp_print_fits_or_breaks fs ~level fits nspaces offset breaks
+  | Some Fit -> str fits
+  | Some Break -> fmt_if_k (offset >= 0) (break nspaces offset) $ str breaks
+  | None -> fits_or_breaks ~level fits nspaces offset breaks
 
-let fits_breaks_if ?force ?hint ?level cnd fits breaks fs =
-  if cnd then fits_breaks ?force ?hint ?level fits breaks fs
+let fits_breaks_if ?force ?hint ?level cnd fits breaks =
+  fmt_if_k cnd (fits_breaks ?force ?hint ?level fits breaks)
 
 (** Wrapping ------------------------------------------------------------*)
 
@@ -154,11 +220,11 @@ let wrap_if_fits_or cnd pre suf k =
 let wrap_fits_breaks_if ?(space = true) c cnd pre suf k =
   match (c.Conf.indicate_multiline_delimiters, space) with
   | `No, false -> wrap_if_k cnd (str pre) (str suf) k
-  | `Space, _ | _, true ->
+  | `Space, _ | `No, true ->
       fits_breaks_if cnd pre (pre ^ " ")
       $ k
       $ fits_breaks_if cnd suf ~hint:(1, 0) suf
-  | `Closing_on_separate_line, false ->
+  | `Closing_on_separate_line, _ ->
       fits_breaks_if cnd pre (pre ^ " ")
       $ k
       $ fits_breaks_if cnd suf ~hint:(1000, 0) suf
@@ -170,11 +236,11 @@ let wrap_fits_breaks ?(space = true) conf x =
 
 let box_debug_enabled = ref false
 
-let with_box_debug k fs =
+let with_box_debug k =
   let g = !box_debug_enabled in
-  box_debug_enabled := true ;
-  k fs ;
-  box_debug_enabled := g
+  with_pp (fun _ -> box_debug_enabled := true)
+  $ k
+  $ with_pp (fun _ -> box_debug_enabled := g)
 
 let box_depth = ref 0
 
@@ -210,27 +276,32 @@ let debug_box_close fs =
 
 let apply_max_indent n = Option.value_map !max_indent ~f:(min n) ~default:n
 
-let open_box ?name n fs =
-  let n = apply_max_indent n in
-  debug_box_open ?name "b" n fs ;
-  Format.pp_open_box fs n
+let open_box ?name n =
+  with_pp (fun fs ->
+      let n = apply_max_indent n in
+      debug_box_open ?name "b" n fs ;
+      Format.pp_open_box fs n )
 
-and open_vbox ?name n fs =
-  let n = apply_max_indent n in
-  debug_box_open ?name "v" n fs ;
-  Format.pp_open_vbox fs n
+and open_vbox ?name n =
+  with_pp (fun fs ->
+      let n = apply_max_indent n in
+      debug_box_open ?name "v" n fs ;
+      Format.pp_open_vbox fs n )
 
-and open_hvbox ?name n fs =
-  let n = apply_max_indent n in
-  debug_box_open ?name "hv" n fs ;
-  Format.pp_open_hvbox fs n
+and open_hvbox ?name n =
+  with_pp (fun fs ->
+      let n = apply_max_indent n in
+      debug_box_open ?name "hv" n fs ;
+      Format.pp_open_hvbox fs n )
 
-and open_hovbox ?name n fs =
-  let n = apply_max_indent n in
-  debug_box_open ?name "hov" n fs ;
-  Format.pp_open_hovbox fs n
+and open_hovbox ?name n =
+  with_pp (fun fs ->
+      let n = apply_max_indent n in
+      debug_box_open ?name "hov" n fs ;
+      Format.pp_open_hovbox fs n )
 
-and close_box fs = debug_box_close fs ; Format.pp_close_box fs ()
+and close_box =
+  with_pp (fun fs -> debug_box_close fs ; Format.pp_close_box fs ())
 
 (** Wrapping boxes ------------------------------------------------------*)
 
@@ -252,37 +323,36 @@ and hovbox_if ?name cnd n = wrap_if_k cnd (open_hovbox ?name n) close_box
 
 (** Text filling --------------------------------------------------------*)
 
-let utf8_length s =
-  Uuseg_string.fold_utf_8 `Grapheme_cluster (fun n _ -> n + 1) 0 s
-
-let fill_text ?epi text =
+let fill_text ?(epi = "") text =
   assert (not (String.is_empty text)) ;
   let fmt_line line =
     let words =
       List.filter ~f:(Fn.non String.is_empty)
         (String.split_on_chars line
-           ~on:['\t'; '\n'; '\011'; '\012'; '\r'; ' '])
+           ~on:['\t'; '\n'; '\011'; '\012'; '\r'; ' '] )
     in
-    list words "@ " (fun s fs -> Format.pp_print_as fs (utf8_length s) s)
+    list words "@ " str
   in
   let lines =
     List.remove_consecutive_duplicates
       ~equal:(fun x y -> String.is_empty x && String.is_empty y)
       (String.split (String.rstrip text) ~on:'\n')
   in
-  fmt_if (String.starts_with_whitespace text) " "
-  $ hovbox 0
-      ( hvbox 0
-          (hovbox 0
-             (list_pn lines (fun ~prev:_ curr ~next ->
-                  fmt_line curr
-                  $
-                  match next with
-                  | Some str when String.for_all str ~f:Char.is_whitespace ->
-                      close_box $ fmt "\n@," $ open_hovbox 0
-                  | Some _ when not (String.is_empty curr) -> fmt "@ "
-                  | _ -> noop)))
-      $ fmt_if
-          (String.length text > 1 && String.ends_with_whitespace text)
-          " "
-      $ opt epi Fn.id )
+  let pro = if String.starts_with_whitespace text then " " else "" in
+  let epi =
+    if String.length text > 1 && String.ends_with_whitespace text then
+      " " ^ epi
+    else epi
+  in
+  str pro
+  $ hvbox 0
+      (hovbox 0
+         ( list_pn lines (fun ~prev:_ curr ~next ->
+               fmt_line curr
+               $
+               match next with
+               | Some str when String.for_all str ~f:Char.is_whitespace ->
+                   close_box $ fmt "\n@," $ open_hovbox 0
+               | Some _ when not (String.is_empty curr) -> fmt "@ "
+               | _ -> noop )
+         $ str epi ) )

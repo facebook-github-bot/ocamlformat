@@ -1,0 +1,30 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;                                                                        ;
+;                              OCamlFormat                               ;
+;                                                                        ;
+;            Copyright (c) Facebook, Inc. and its affiliates.            ;
+;                                                                        ;
+;      This source code is licensed under the MIT license found in       ;
+;      the LICENSE file in the root directory of this source tree.       ;
+;                                                                        ;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(executable
+ (name main)
+ (public_name ocamlformat-rpc)
+ (package ocamlformat-rpc)
+ (flags
+  (:standard -open Ocamlformat_stdlib))
+ (instrumentation
+  (backend bisect_ppx))
+ (libraries ocamlformat_lib ocamlformat-rpc-lib))
+
+(rule
+ (with-stdout-to
+  ocamlformat-rpc.1
+  (run ./main.exe --help=groff)))
+
+(install
+ (section man)
+ (files ocamlformat-rpc.1)
+ (package ocamlformat-rpc))

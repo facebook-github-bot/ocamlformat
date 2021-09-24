@@ -1,17 +1,23 @@
 module Exp : sig
-  val mk : unit -> Migrate_ast.Parsetree.expression
-
-  val is_generated : Ppxlib.Parsetree.expression -> bool
+  val mk : unit -> Parsetree.expression
 end
 
-module Attr : sig
-  val mk : unit -> Migrate_ast.Parsetree.attribute
-
-  val is_generated : Ppxlib.Parsetree.attribute -> bool
+module Cl : sig
+  val mk : unit -> Parsetree.class_expr
 end
 
-module Class_exp : sig
-  val mk : unit -> Migrate_ast.Parsetree.class_expr
+module Cty : sig
+  val mk : unit -> Parsetree.class_type
+end
 
-  val is_generated : Ppxlib.Parsetree.class_expr -> bool
+module Pat : sig
+  val mk : unit -> Parsetree.pattern
+end
+
+module Mty : sig
+  val mk : unit -> Parsetree.module_type
+end
+
+module Mod : sig
+  val mk : unit -> Parsetree.module_expr
 end

@@ -9,19 +9,31 @@
 ;                                                                        ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(rule
- (targets Version.ml)
- (deps (universe))
- (action
-  (run ocaml %{dep:../tools/gen_version.mlt} Version.ml))
- (mode fallback))
-
 (ocamllex Literal_lexer)
 
 (library
  (name ocamlformat_lib)
  (flags
-  (:standard -open Base -open Import -open Compat))
- ;;INSERT_BISECT_HERE;;
- (libraries format_ import ocaml-migrate-parsetree odoc.model odoc.parser
-   parse_wyc re uuseg uuseg.string token_latest compat ppxlib))
+  (:standard
+   -open
+   Ocaml_common
+   -open
+   Ocaml_413_extended
+   -open
+   Ocamlformat_stdlib))
+ (instrumentation
+  (backend bisect_ppx))
+ (libraries
+  format_
+  ocaml_common
+  ocaml_413
+  ocaml_413_extended
+  ocamlformat_stdlib
+  ocaml-version
+  ocp-indent.lib
+  odoc-parser
+  parse_wyc
+  re
+  uuseg
+  uuseg.string
+  dune-build-info))

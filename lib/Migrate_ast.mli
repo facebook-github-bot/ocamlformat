@@ -9,22 +9,8 @@
 (*                                                                        *)
 (**************************************************************************)
 
-module Ast_helper = Ppxlib.Ast_helper
-
-module Parsetree : sig
-  include module type of Ppxlib.Parsetree
-
-  val equal_core_type : core_type -> core_type -> bool
-
-  val equal_structure : structure -> structure -> bool
-
-  val equal_signature : signature -> signature -> bool
-
-  val equal_toplevel_phrase : toplevel_phrase -> toplevel_phrase -> bool
-end
-
 module Asttypes : sig
-  include module type of Ppxlib.Asttypes
+  include module type of Asttypes
 
   val is_private : private_flag -> bool
 
@@ -33,6 +19,8 @@ module Asttypes : sig
   val is_override : override_flag -> bool
 
   val is_mutable : mutable_flag -> bool
+
+  val is_recursive : rec_flag -> bool
 end
 
 module Position : sig
@@ -43,10 +31,12 @@ module Position : sig
   val column : t -> int
 
   val distance : t -> t -> int
+
+  val compare : t -> t -> int
 end
 
 module Location : sig
-  include module type of Ppxlib.Location
+  include module type of Location
 
   type comparator_witness
 
@@ -75,6 +65,11 @@ module Location : sig
 
   val compare_end_col : t -> t -> int
 
+  val line_difference : t -> t -> int
+  (** [line_difference x y] returns the difference between the line at the
+      start of [y] and at the end of [x]. [x] must precede [y], undefined
+      behavior otherwise, or if one location includes the other. *)
+
   val fmt : Format.formatter -> t -> unit
 
   val smallest : t -> t list -> t
@@ -83,99 +78,14 @@ module Location : sig
 
   val is_single_line : t -> int -> bool
 
-  type location = t
+  val of_lexbuf : Lexing.lexbuf -> t
 
-  module Set : sig
-    type t
-
-    val empty : t
-
-    val add : location -> t -> t
-
-    val remove : location -> t -> t
-
-    val to_list : t -> location list
-  end
-
-  module Multimap : sig
-    type 'a t
-
-    val empty : 'a t
-
-    val add_list : 'a t -> location -> 'a list -> 'a t
-
-    val update_multi :
-         'a t
-      -> src:location
-      -> dst:location
-      -> f:('a list -> 'a list -> 'a list)
-      -> 'a t
-
-    val find : 'a t -> location -> 'a list option
-
-    val remove : 'a t -> location -> 'a t
-
-    val filter : 'a t -> f:('a -> bool) -> 'a t
-
-    val mem : 'a t -> location -> bool
-
-    val to_list : 'a t -> 'a list
-
-    val find_multi : 'a t -> location -> 'a list
-  end
+  val print : Format.formatter -> t -> unit
 end
-
-module Mapper : sig
-  type 'a fragment =
-    | Structure : Parsetree.structure fragment
-    | Signature : Parsetree.signature fragment
-    | Use_file : Parsetree.toplevel_phrase list fragment
-
-  val equal : 'a fragment -> 'a -> 'a -> bool
-
-  val map_ast : 'a fragment -> Ppxlib.Ast_traverse.map -> 'a -> 'a
-end
-
-module Parse : sig
-  val fragment : 'a Mapper.fragment -> Lexing.lexbuf -> 'a
-end
-
-module Printast : sig
-  val implementation : Format.formatter -> Parsetree.structure -> unit
-
-  val interface : Format.formatter -> Parsetree.signature -> unit
-
-  val payload : Format.formatter -> Parsetree.payload -> unit
-
-  val expression : Format.formatter -> Parsetree.expression -> unit
-
-  val use_file : Format.formatter -> Parsetree.toplevel_phrase list -> unit
-
-  val fragment : 'a Mapper.fragment -> Format.formatter -> 'a -> unit
-end
-
-module Pprintast = Ppxlib.Pprintast
 
 module Longident : sig
-  type t = Longident.t =
-    | Lident of string
-    | Ldot of t * string
-    | Lapply of t * t
-
-  val flatten : t -> string list
-
-  val last : t -> string
+  include module type of Longident
 
   val lident : string -> t
   (** Make a Lident from a dotless string *)
-end
-
-module Parser = Token_latest
-
-module Lexer : sig
-  val token : Lexing.lexbuf -> Parser.token
-
-  type error
-
-  exception Error of error * Location.t
 end
