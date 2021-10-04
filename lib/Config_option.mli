@@ -22,43 +22,59 @@ module Make (C : CONFIG) : sig
 
   type 'a t
 
+  type kind = Formatting | Operational
+
   type parsed_from = [`File of Fpath.t * int | `Attribute]
 
   type updated_from = [`Env | `Commandline | `Parsed of parsed_from]
 
   type deprecated
 
+  type removed
+
+  type status = [`Valid | `Deprecated of deprecated | `Removed of removed]
+
   type 'a option_decl =
        names:string list
     -> doc:string
-    -> section:[`Formatting | `Operational]
+    -> kind:kind
     -> ?allow_inline:bool
-    -> ?deprecated:deprecated
+    -> ?status:[`Valid | `Deprecated of deprecated]
     -> (config -> 'a -> config)
     -> (config -> 'a)
     -> 'a t
 
-  val section_name : [`Formatting | `Operational] -> string
+  val section_name : kind -> status -> string
 
   val deprecated : since_version:string -> string -> deprecated
 
-  (** Indicate that a configuration value has been removed in an ocamlformat
-      release. A message indicating how to migrate will be displayed. *)
-  type removed_value
+  val removed : since_version:string -> string -> removed
 
-  val removed_value :
-    name:string -> version:string -> msg:string -> removed_value
-  (** [name] is the configuration value that was removed in version
-      [version]. [msg] explains how to get the former behaviour. *)
+  module Value : sig
+    type 'a t
 
-  val removed_values :
-    names:string list -> version:string -> msg:string -> removed_value list
-  (** Shorthand for [removed_value] when [version] and [msg] are shared. This
-      can be used when multiple values are removed at the same time. *)
+    val make : ?deprecated:deprecated -> name:string -> 'a -> string -> 'a t
+  end
+
+  module Value_removed : sig
+    (** Indicate that a configuration value has been removed in an
+        ocamlformat release. A message indicating how to migrate will be
+        displayed. *)
+    type t
+
+    val make : name:string -> version:string -> msg:string -> t
+    (** [name] is the configuration value that was removed in version
+        [version]. [msg] explains how to get the former behaviour. *)
+
+    val make_list :
+      names:string list -> version:string -> msg:string -> t list
+    (** Shorthand for [mk] when [version] and [msg] are shared. This can be
+        used when multiple values are removed at the same time. *)
+  end
 
   val choice :
-       all:(string * 'a * string) list
-    -> ?removed_values:removed_value list
+       all:'a Value.t list
+    -> ?removed_values:Value_removed.t list
     -> 'a option_decl
 
   val flag : default:bool -> bool option_decl
