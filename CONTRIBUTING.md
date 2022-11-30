@@ -1,80 +1,97 @@
-# Contributing to OCamlFormat
+# Welcome to GitHub docs contributing guide <!-- omit in toc -->
 
-## Reporting Issues
+Thank you for investing your time in contributing to our project! Any contribution you make will be reflected on [docs.github.com](https://docs.github.com/en) :sparkles:. 
 
-If you encounter a problem when using OCamlFormat or if you have any questions, please open a [GitHub issue](https://github.com/ocaml-ppx/ocamlformat/issues/).
+Read our [Code of Conduct](./CODE_OF_CONDUCT.md) to keep our community approachable and respectable.
 
-1. Check first if your issue has already been [reported](https://github.com/ocaml-ppx/ocamlformat/issues/).
-2. Include the version of OCamlFormat you are using (`ocamlformat --version`).
-3. Include a (preferably short) source file which demonstrates the issue.
-4. Describe the expected and actual behavior.
-5. Do not unsubscribe from the issue until it is closed, the maintainers may ask for your feedback.
+In this guide you will get an overview of the contribution workflow from opening an issue, creating a PR, reviewing, and merging the PR.
 
-When acknowledged, the project maintainers will add [labels](#ocamlformat-labels) to your issue throughout its lifespan.
+Use the table of contents icon <img src="./assets/images/table-of-contents.png" width="25" height="25" /> on the top left corner of this document to get to a specific section of this guide quickly.
 
-## Pull Requests
+## New contributor guide
 
-We actively welcome pull requests.
+To get an overview of the project, read the [README](README.md). Here are some resources to help you get started with open source contributions:
 
-1. Prior to investing a large amount of time into significant or invasive changes, or those that affect the output, it is likely more efficient to first open an issue for discussion and planning.
-2. If you are not familiar with the project, focus first on the [Good first issues](https://github.com/ocaml-ppx/ocamlformat/issues?utf8=%E2%9C%93&q=is%3Aissue+is%3Aopen+label%3A%22Good-first-issue+%3A%2B1%3A%22).
-3. Fork the repository and create your branch from `main`.
-4. If you have added code that should be tested, add tests (they should be located in the `tests/passing` directory).
-'.
-5. Ensure the test suite passes (see [Running the tests](#running-the-tests)).
-6. If you haven't already, complete the Contributor License Agreement ("CLA").
-
-When acknowledged, the project maintainers will add [labels](#ocamlformat-labels) to your pull request throughout its lifespan.
+- [Finding ways to contribute to open source on GitHub](https://docs.github.com/en/get-started/exploring-projects-on-github/finding-ways-to-contribute-to-open-source-on-github)
+- [Set up Git](https://docs.github.com/en/get-started/quickstart/set-up-git)
+- [GitHub flow](https://docs.github.com/en/get-started/quickstart/github-flow)
+- [Collaborating with pull requests](https://docs.github.com/en/github/collaborating-with-pull-requests)
 
 
-### Running the tests
+## Getting started
 
-Once OCamlFormat has been built, run `make test` to check for regressions.
+To navigate our codebase with confidence, see [the introduction to working in the docs repository](/contributing/working-in-docs-repository.md) :confetti_ball:. For more information on how we write our markdown files, see [the GitHub Markdown reference](contributing/content-markup-reference.md).
 
-The first step of `make test` is to ensure that invoking OCamlFormat on its own source code produces the same source code (you can run `make fixpoint` to only check this). If OCamlFormat is not integrated with the editor you use, you should run `make fmt` to reformat all OCamlFormat source files.
+Check to see what [types of contributions](/contributing/types-of-contributions.md) we accept before making changes. Some of them don't even require writing a single line of code :sparkles:.
 
-The second part of `make test` is to ensure the test suite passes. You should not see any unexpected diff. One can accept all diffs at once with `make regtests-promote`.
+### Issues
 
-Once `make test` passes, pull requests should be tested on the code in a set of external repositories. This can be done by executing `tools/test_branch.sh <rev>` where `<rev>` is the git revision/branch containing the pull request's changes. If a pull request affects an option, `OCAMLFORMAT=<option>=<value> tools/test_branch.sh <rev>` should also be run to test with the option enabled.
+#### Create a new issue
 
-The `tools/test_branch.sh` script runs two versions of `ocamlformat` (the specified branch, or `HEAD` if omitted, and its merge base with main) on the test code and reports the differences in the formatted code. Formatting failures may also be reported on the terminal, these will need to be fixed before a pull request can be merged. The differences should be inspected to ensure they are as intended. Pull requests changing the format of code should generally introduce an option to enable the alternate style (if in doubt, open an issue for discussion). Any differences in the formatted code with the option disabled should be summarized and explained in the pull request discussion.
+If you spot a problem with the docs, [search if an issue already exists](https://docs.github.com/en/github/searching-for-information-on-github/searching-on-github/searching-issues-and-pull-requests#search-by-the-title-body-or-comments). If a related issue doesn't exist, you can open a new issue using a relevant [issue form](https://github.com/github/docs/issues/new/choose). 
 
-To benefit from the autocompletion of git branch names in the `tools/test_branch.sh` script, if you use the `bash` shell, add the following line to your `~/.bashrc` file:
-```
-source <path-to-ocamlformat>/tools/ocamlformat_test_branch
-```
+#### Solve an issue
 
-If you use the `zsh` shell, add the following lines to your `~/.zshrc` file:
-```
-autoload bashcompinit
-bashcompinit
-source <path-to-ocamlformat>/tools/ocamlformat_test_branch
-```
+Scan through our [existing issues](https://github.com/github/docs/issues) to find one that interests you. You can narrow down the search using `labels` as filters. See [Labels](/contributing/how-to-use-labels.md) for more information. As a general rule, we don’t assign issues to anyone. If you find an issue to work on, you are welcome to open a PR with a fix.
 
-## Contributor License Agreement ("CLA")
+### Make Changes
 
-In order to accept your pull request, we need you to submit a CLA. You only need to do this once to work on any of Facebook's open source projects. Complete your CLA here: <https://code.facebook.com/cla>. If you have any questions, please drop us a line at cla@fb.com.
+#### Make changes in the UI
 
-## License
+Click **Make a contribution** at the bottom of any docs page to make small changes such as a typo, sentence fix, or a broken link. This takes you to the `.md` file where you can make your changes and [create a pull request](#pull-request) for a review. 
 
-By contributing to OCamlFormat, you agree that your contributions will be licensed under the LICENSE file in the root directory of this source tree.
+ <img src="./assets/images/contribution_cta.png" width="300" height="150" /> 
 
-## OCamlFormat Labels
+#### Make changes in a codespace
 
-### Pull Request specific
+For more information about using a codespace for working on GitHub documentation, see "[Working in a codespace](https://github.com/github/docs/blob/main/contributing/codespace.md)."
 
-- [CLA Signed](https://github.com/ocaml-ppx/ocamlformat/labels/CLA%20Signed): Added automatically as long as the user signed the Contributor License Agreement (see above)
+#### Make changes locally
 
-### Issue specific
+1. [Install Git LFS](https://docs.github.com/en/github/managing-large-files/versioning-large-files/installing-git-large-file-storage).
 
-- [Good-first-issue](https://github.com/ocaml-ppx/ocamlformat/labels/Good-first-issue%20%3A%2B1%3A): This issue is a good entry point in the project for new contributors
+2. Fork the repository.
+- Using GitHub Desktop:
+  - [Getting started with GitHub Desktop](https://docs.github.com/en/desktop/installing-and-configuring-github-desktop/getting-started-with-github-desktop) will guide you through setting up Desktop.
+  - Once Desktop is set up, you can use it to [fork the repo](https://docs.github.com/en/desktop/contributing-and-collaborating-using-github-desktop/cloning-and-forking-repositories-from-github-desktop)!
 
-### Kind
+- Using the command line:
+  - [Fork the repo](https://docs.github.com/en/github/getting-started-with-github/fork-a-repo#fork-an-example-repository) so that you can make your changes without affecting the original project until you're ready to merge them.
 
-- [Kind/Bug](https://github.com/ocaml-ppx/ocamlformat/labels/Kind%2FBug%20%3Ax%3A): This issue describes a problem or this contribution addresses a problem (erroneous/unintended behavior)
-- [Kind/Docs](https://github.com/ocaml-ppx/ocamlformat/labels/Kind%2FDocs): This is related to a documentation change (user documentation or source code documentation)
-- [Kind/Feature-request](https://github.com/ocaml-ppx/ocamlformat/labels/Kind%2FFeature-request): This issue or contribution proposes a new feature
-- [Kind/Style-suggestion](https://github.com/ocaml-ppx/ocamlformat/labels/Kind%2FStyle%20suggestion): This issue or contribution proposes a style modification for the formatted output
-- [Kind/To-discuss](https://github.com/ocaml-ppx/ocamlformat/labels/Kind%2FTo-discuss): Discussion needed to converge to a solution
+3. Install or update to **Node.js v16**. For more information, see [the development guide](contributing/development.md).
 
-Feel free to contribute on the [Help wanted](https://github.com/ocaml-ppx/ocamlformat/labels/Help%20wanted%20%3Afire%3A) issues and pull requests.
+4. Create a working branch and start with your changes!
+
+### Commit your update
+
+Commit the changes once you are happy with them. Don't forget to [self-review](/contributing/self-review.md) to speed up the review process:zap:.
+
+### Pull Request
+
+When you're finished with the changes, create a pull request, also known as a PR.
+- Fill the "Ready for review" template so that we can review your PR. This template helps reviewers understand your changes as well as the purpose of your pull request. 
+- Don't forget to [link PR to issue](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue) if you are solving one.
+- Enable the checkbox to [allow maintainer edits](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/allowing-changes-to-a-pull-request-branch-created-from-a-fork) so the branch can be updated for a merge.
+Once you submit your PR, a Docs team member will review your proposal. We may ask questions or request additional information.
+- We may ask for changes to be made before a PR can be merged, either using [suggested changes](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/incorporating-feedback-in-your-pull-request) or pull request comments. You can apply suggested changes directly through the UI. You can make any other changes in your fork, then commit them to your branch.
+- As you update your PR and apply changes, mark each conversation as [resolved](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/commenting-on-a-pull-request#resolving-conversations).
+- If you run into any merge issues, checkout this [git tutorial](https://github.com/skills/resolve-merge-conflicts) to help you resolve merge conflicts and other issues.
+
+### Your PR is merged!
+
+Congratulations :tada::tada: The GitHub team thanks you :sparkles:. 
+
+Once your PR is merged, your contributions will be publicly visible on the [GitHub docs](https://docs.github.com/en). 
+
+Now that you are part of the GitHub docs community, see how else you can [contribute to the docs](/contributing/types-of-contributions.md).
+
+## Windows
+
+This site can be developed on Windows, however a few potential gotchas need to be kept in mind:
+
+1. Regular Expressions: Windows uses `\r\n` for line endings, while Unix-based systems use `\n`. Therefore, when working on Regular Expressions, use `\r?\n` instead of `\n` in order to support both environments. The Node.js [`os.EOL`](https://nodejs.org/api/os.html#os_os_eol) property can be used to get an OS-specific end-of-line marker.
+2. Paths: Windows systems use `\` for the path separator, which would be returned by `path.join` and others. You could use `path.posix`, `path.posix.join` etc and the [slash](https://ghub.io/slash) module, if you need forward slashes - like for constructing URLs - or ensure your code works with either.
+3. Bash: Not every Windows developer has a terminal that fully supports Bash, so it's generally preferred to write [scripts](/script) in JavaScript instead of Bash.
+4. Filename too long error: There is a 260 character limit for a filename when Git is compiled with `msys`. While the suggestions below are not guaranteed to work and could cause other issues, a few workarounds include:
+    - Update Git configuration: `git config --system core.longpaths true`
+    - Consider using a different Git client on Windows
