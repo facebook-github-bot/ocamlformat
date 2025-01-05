@@ -10,7 +10,7 @@
 (**************************************************************************)
 
 {
-open Caml
+open Stdlib
 
 (* To buffer string literals *)
 
@@ -81,7 +81,10 @@ and string_aux mode = parse
         string_aux mode lexbuf
       }
   | newline
-      { store_string (Lexing.lexeme lexbuf);
+      { (* See store_normalized_newline in vendor/parser-standard/lexer.mll. *)
+        (match Lexing.lexeme lexbuf with
+        | "\n" -> store_string "\n"
+        | s -> store_string (String.sub s 1 (String.length s - 1)));
         string_aux mode lexbuf }
   | eof
       { raise Parse_error }
@@ -89,32 +92,10 @@ and string_aux mode = parse
       { store_string_char (Lexing.lexeme_char lexbuf 0);
         string_aux mode lexbuf }
 
-and char = parse
-  | "\'" newline "\'"
-      { "\\n" }
-  | "\'" ([^ '\\' '\'' '\010' '\013'] as x) "\'"
-      { String.make 1 x }
-  | "\'" ("\\" ['\\' '\'' '\"' 'n' 't' 'b' 'r' ' '] as x) "\'"
-      { x }
-  | "\'" ("\\" ['0'-'9'] ['0'-'9'] ['0'-'9'] as x) "\'"
-      { x }
-  | "\'" ("\\" 'o' ['0'-'3'] ['0'-'7'] ['0'-'7'] as x) "\'"
-      { x }
-  | "\'" ("\\" 'x' ['0'-'9' 'a'-'f' 'A'-'F'] ['0'-'9' 'a'-'f' 'A'-'F'] as x) "\'"
-      { x }
-  | _
-      { raise Parse_error }
-
 {
   let string mode s =
     let lexbuf = Lexing.from_string s in
     match string mode lexbuf with
-    | s -> Some s
-    | exception Parse_error -> None
-
-  let char s =
-    let lexbuf = Lexing.from_string s in
-    match char lexbuf with
     | s -> Some s
     | exception Parse_error -> None
 }

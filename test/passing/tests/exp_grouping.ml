@@ -122,6 +122,11 @@ let _ = a :: ( let a = b in c )
 let _ = [ ( let a = b in c ) ]
 let _ = [| ( let a = b in c ) |]
 
+let () =
+  if a then begin b
+    (* asd *)
+  end
+
 [@@@ocamlformat "if-then-else=compact"]
 
 let _ =
@@ -134,6 +139,11 @@ let _ =
   else begin
     foo.fooooo <- Fooo.foo fooo foo.fooooo;
     Fooo fooo
+  end
+
+let () =
+  if a then begin b
+    (* asd *)
   end
 
 [@@@ocamlformat "if-then-else=fit-or-vertical"]
@@ -150,6 +160,11 @@ let _ =
     Fooo fooo
   end
 
+let () =
+  if a then begin b
+    (* asd *)
+  end
+
 [@@@ocamlformat "if-then-else=keyword-first"]
 
 let _ =
@@ -162,6 +177,11 @@ let _ =
   else begin
     foo.fooooo <- Fooo.foo fooo foo.fooooo;
     Fooo fooo
+  end
+
+let () =
+  if a then begin b
+    (* asd *)
   end
 
 [@@@ocamlformat "if-then-else=k-r"]
@@ -209,4 +229,57 @@ let () =
     let test_name = "Test 2" in
     test_name >:: fun _ ->
       assert_equal "b" "b"
-  end;
+  end
+
+let _ = begin end
+let _ = begin (* foo *) end
+let _ = begin%ext end
+let _ = begin%ext (* foo *) end
+let _ = begin x y end
+let _ = begin (* foo *) x y end
+let _ = begin%ext x y end
+let _ = begin%ext (* foo *) x y end
+
+let _ =
+  begin[@landmark "parse_constant_dividends"]
+    market_data_items := ()
+  end
+
+let () =
+  if a then begin b
+    (* asd *)
+  end
+
+let x =
+  let get_path_and_distance pv1 pv2 =
+    if is_loop pv1 pv2 then Some ([],0) else
+      match Tbl.find dist_tbl (pv1, pv2) with
+      | None ->
+        (* FIXME: temporary hack to avoid Jane Street's annoying warnings. *)
+        begin[@warning "-3"] try
+          let path', dist = Dijkstra.shortest_path pgraph pv1 pv2 in
+          let path = unwrap_path path' in
+          Tbl.set dist_tbl ~key:(pv1, pv2) ~data:(path, dist);
+          Some (path, dist)
+        with Not_found | Not_found_s _ ->
+          None
+        end
+      | pd -> pd
+  in
+  ()
+
+let _ =
+  if something_changed then begin[@attr]
+    loop
+  end
+
+let _ =
+  match x with
+  | _ ->
+      (* xxx *)
+      begin y end
+
+let _ =
+  match x with
+  | _ ->
+      begin[@foo] y end

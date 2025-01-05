@@ -9,13 +9,28 @@ let%client () =
     (fun () ->
       Lwt.async (fun () -> log "Hello from the client to the server!") )
 
+let%client () =
+  Eliom_client.onload
+  (* NB The service underlying the server_function isn't available on the
+     client before loading the page. *) ~foo:(fun () ->
+      Lwt.async (fun () -> log "Hello from the client to the server!") )
+
+let%client () =
+  Eliom_client.onload
+  (* NB The service underlying the server_function isn't available on the
+     client before loading the page. *)
+    ~foo:(fun () ->
+      Lwt.async (fun () -> log "Hello from the client to the server!") )
+    bar
+
 [%%shared
 type some_type = int * string list [@@deriving json]
 
 type another_type = A of some_type | B of another_type [@@deriving json]]
 
-let%server ( (s : int Eliom_shared.React.S.t)
-           , (f : (?step:React.step -> int -> unit) Eliom_shared.Value.t) ) =
+let%server
+    ( (s : int Eliom_shared.React.S.t)
+    , (f : (?step:React.step -> int -> unit) Eliom_shared.Value.t) ) =
   Eliom_shared.React.S.create 0
 
 let%client incr_s () =

@@ -211,3 +211,61 @@ and y = ()
 [@@foo]
 (* after y *)
 (** doc y *)
+
+
+let _ =
+  let* () =
+    (* xxx *)
+    xxx
+  and* () =
+    (* yyy *)
+    yyy
+  in
+  zzz
+
+[@@@ocamlformat "let-binding-spacing=double-semicolon"]
+
+module A = struct
+  let f : int S.t ab -> float S.t ab -> string =
+   fun (l : int S.t ab) (r : float S.t ab) ->
+    match (l, r) with A, B -> "f A B"
+ ;;
+end
+
+let (A (a, _, b) | B (b, a)) = A (1, 2, 3)
+
+let copy from ~into : unit =
+  let ({
+     pulse_captured_vars_length_contradictions;
+     pulse_summaries_count;
+     topl_reachable_calls;
+     timeouts;
+     timings;
+   } [@warning "+9"]) = () in
+  ()
+
+let { x; y } : foo = bar
+let ({ x; y } : foo) = bar
+
+let a, b = (raise Exit : int * int)
+let (a, b) = (raise Exit : int * int)
+;;
+
+let _ =
+  fun xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx : _ ->
+  match () with
+  | _ -> ()
+;;
+
+fun xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx : _ ->
+  match () with
+  | _ -> ()
+
+let _ =
+  (*
+     An alternative would be to track 'mutability of the field'
+     directly.
+  *)
+  function
+  | Strict | Alias -> Immutable
+  | StrictOpt -> Mutable

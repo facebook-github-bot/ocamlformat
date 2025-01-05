@@ -74,3 +74,46 @@ let {
   (* f *) f (* f' *);
   (* g *) g (* g' *) = (* j *) ( (* h *) h (* h' *) : (* i *) i (* i' *) ) (* j' *)
 } = x
+
+type program =
+  { prog_globals : global list;       (* global variables *)
+    prog_struct_types : lltype list;  (* data structures *)
+    prog_lib_funcs : func list;       (* library functions *)
+  }
+
+type t =
+  { mutable ci_fixed: IntervalSet.t
+  ; mutable ci_spilled:
+      (* spilled stack slots (reg.loc = Stack (Local n)) still in use *)
+      IntervalSet.t }
+
+type t =
+  { mutable ci_fixed: IntervalSet.t
+  ; mutable
+      (* spilled stack slots (reg.loc = Stack (Local n)) still in use *)
+      ci_spilled:
+      IntervalSet.t }
+
+type t =
+  { mutable ci_fixed: IntervalSet.t
+  ; mutable ci_spilled
+      (* spilled stack slots (reg.loc = Stack (Local n)) still in use *):
+      IntervalSet.t }
+
+let _ =
+  match c with
+  | {issuer = _; (* TODO *)
+     _
+    } -> ()
+  | {issuer = _;
+     (* TODO *) _
+    } -> ()
+  | {issuer = _;
+     _ (* TODO *)
+    } -> ()
+  | {issuer = _; (* TODO *)
+     _ (* TODO *)
+    } -> ()
+  | {issuer = _;
+     (* TODO *) _ (* TODO *)
+    } -> ()

@@ -44,10 +44,13 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'vc)
 
 (defcustom ocamlformat-command "ocamlformat"
-  "The 'ocamlformat' command."
-  :type 'string
+  "The `ocamlformat' command."
+  :type '(choice
+	  (string :tag "The name of the ocamlformat executable")
+	  (repeat :tag "The prefix of the command to run to run ocamlformat" string))
   :group 'ocamlformat)
 
 (defcustom ocamlformat-enable 'enable
@@ -83,11 +86,11 @@ echo output if used from inside a `before-save-hook'."
 (defcustom ocamlformat-file-kind nil
   "Add a parse argument to ocamlformat if using an unrecognized extension.
 
-It can either be set to 'implementation, 'interface or
+It can either be set to \\='implementation, \\='interface or
 nil (default)."
   :type '(choice
-          (const :tag "implementation" 'implementation)
-          (const :tag "interface" 'interface)
+          (const :tag "implementation" implementation)
+          (const :tag "interface" interface)
           (const :tag "none" nil))
   :group 'ocamlformat)
 
@@ -95,9 +98,11 @@ nil (default)."
 (defun ocamlformat-before-save ()
   "Add this to .emacs to run ocamlformat on the current buffer when saving:
 
-\(add-hook 'before-save-hook 'ocamlformat-before-save)."
+\(add-hook \\='before-save-hook \\='ocamlformat-before-save)."
   (interactive)
-  (when (eq major-mode 'tuareg-mode) (ocamlformat)))
+  (when
+      (memq major-mode '(tuareg-mode caml-mode ocaml-ts-mode ocamli-ts-mode))
+    (ocamlformat)))
 
 (defun ocamlformat--goto-line (line)
   "Move point to the line numbered LINE."
@@ -265,15 +270,23 @@ is nil."
            ((eq ocamlformat-file-kind 'implementation)
             (list "--impl"))
            ((eq ocamlformat-file-kind 'interface)
-            (list "--intf")))))
+            (list "--intf"))))
+	 (ocamlformat-exe
+	  (if (listp ocamlformat-command)
+	      (car ocamlformat-command)
+	    ocamlformat-command))
+	 (ocamlformat-prefix-args
+	  (if (listp ocamlformat-command)
+	      (cdr ocamlformat-command)
+	    '())))
     (unwind-protect
         (save-restriction
           (widen)
           (write-region nil nil bufferfile)
           (if (zerop
                (apply #'call-process
-                      ocamlformat-command nil (list :file errorfile) nil
-                      (append margin-args enable-args extension-args
+                      ocamlformat-exe nil (list :file errorfile) nil
+                      (append ocamlformat-prefix-args margin-args enable-args extension-args
                               (list
                                "--name" buffer-file-name
                                "--output" outputfile bufferfile))))
@@ -289,132 +302,10 @@ is nil."
                     (erase-buffer))
                   (ocamlformat--process-errors
                    (buffer-file-name) bufferfile errorfile errbuf)))
-            (message "Could not apply ocamlformat on %s" buffer-file-name))))
-    (delete-file errorfile)
-    (delete-file bufferfile)
-    (delete-file outputfile)))
-
-(defun ocamlformat-args (name start-line end-line)
-  (let*
-      ((margin-args
-        (cond
-         ((equal ocamlformat-margin-mode 'window)
-          (list "--margin" (number-to-string (window-body-width))))
-         ((equal ocamlformat-margin-mode 'fill)
-          (list "--margin" (number-to-string fill-column)))
-         (t
-          '())))
-       (enable-args
-        (cond
-         ((equal ocamlformat-enable 'disable)
-          (list "--disable"))
-         ((equal ocamlformat-enable 'enable-outside-detected-project)
-          (list "--enable-outside-detected-project"))
-         (t
-          '())))
-       (extension-args
-        (cond
-         ((eq ocamlformat-file-kind 'implementation)
-          (list "--impl"))
-         ((eq ocamlformat-file-kind 'interface)
-          (list "--intf")))))
-    (append margin-args enable-args extension-args
-            (list
-             "-"
-             "--name" name
-             "--numeric" (format "%d-%d" start-line end-line)))))
-
-(defun ocamlformat-region (start end)
-  (interactive "r")
-  (let*
-      ((ext (file-name-extension buffer-file-name t))
-       (bufferfile (file-truename (make-temp-file "ocamlformat" nil ext)))
-       (errorfile (file-truename (make-temp-file "ocamlformat" nil ext)))
-       (errbuf
-        (cond
-         ((eq ocamlformat-show-errors 'buffer)
-          (get-buffer-create "*compilation*"))
-         ((eq ocamlformat-show-errors 'echo)
-          (get-buffer-create "*OCamlFormat stderr*"))))
-       (start-line (line-number-at-pos start))
-       (end-line (line-number-at-pos end))
-       (indents-str
-        (with-output-to-string
-          (if (/= 0
-                (apply 'call-process-region
-                       (point-min) (point-max) ocamlformat-command nil
-                       (list standard-output errorfile) nil
-                       (ocamlformat-args buffer-file-name start-line end-line)))
-              (progn
-                (if errbuf
-                  (progn
-                    (with-current-buffer errbuf
-                      (setq buffer-read-only nil)
-                      (erase-buffer))
-                    (ocamlformat--process-errors
-                     (buffer-file-name) bufferfile errorfile errbuf)))
-                (message "Could not apply ocamlformat")))))
-       (indents (mapcar 'string-to-number (split-string indents-str))))
-    (save-excursion
-      (goto-char start)
-      (mapcar
-       #'(lambda (indent) (indent-line-to indent) (forward-line))
-       indents))
-    (delete-file errorfile)
-    (delete-file bufferfile)))
-
-(defun ocamlformat-line ()
-  (interactive nil)
-  (ocamlformat-region (point) (point)))
-
-(defun ocamlformat--enable-indent ()
-  "Whether the indentation feature is enabled."
-  (version<= "0.19.0" (ocamlformat-version)))
-
-;;;###autoload
-(defun ocamlformat-setup-indent ()
-  (interactive nil)
-  (when (ocamlformat--enable-indent)
-    (setq-local indent-line-function #'ocamlformat-line)
-    (setq-local indent-region-function #'ocamlformat-region)))
-
-;;;###autoload
-(defun ocamlformat-caml-mode-setup ()
-  (ocamlformat-setup-indent)
-  (local-unset-key "\t"))  ;; caml-mode rebinds TAB !
-
-(defun ocamlformat-newline-and-indent (&optional arg)
-  "Insert a newline, then indent according to `ocamlformat-line'.
-With ARG, perform this action that many times."
-  (interactive "*p")
-  (delete-horizontal-space t)
-  (unless arg
-    (setq arg 1))
-  (dotimes (_ arg)
-    (newline nil t)
-    (insert "x")
-    (ocamlformat-line)
-    (delete-char -1)))
-
-(defun ocamlformat-set-newline-and-indent ()
-  "Bind RET to `ocamlformat-newline-and-indent'."
-  (when (ocamlformat--enable-indent)
-    (local-set-key (kbd "RET") 'ocamlformat-newline-and-indent)))
-
-(defun ocamlformat-version ()
-  "Get the version of the installed ocamlformat."
-  (car
-   (split-string
-    (shell-command-to-string
-     (format "%s --version" (shell-quote-argument ocamlformat-command)))
-    "-"
-    t
-    split-string-default-separators)))
-
-(add-hook 'tuareg-mode-hook 'ocamlformat-setup-indent t)
-(add-hook 'tuareg-mode-hook 'ocamlformat-set-newline-and-indent)
-(add-hook 'caml-mode-hook 'ocamlformat-caml-mode-setup t)
-(add-hook 'caml-mode-hook 'ocamlformat-set-newline-and-indent)
+            (message "Could not apply ocamlformat on %s" buffer-file-name)))
+      (delete-file errorfile)
+      (delete-file bufferfile)
+      (delete-file outputfile))))
 
 (provide 'ocamlformat)
 

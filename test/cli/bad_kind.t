@@ -1,3 +1,5 @@
+  $ echo profile=default > .ocamlformat
+
   $ echo 'module X : S' > a.mli
 
   $ ocamlformat --impl a.mli

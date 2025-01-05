@@ -117,6 +117,11 @@ let foo =
   else some default action
 
 let foo = if cmp < 0 then (* foo *) a + b else (* foo *) a - b
+let foo =
+  if cmp < 0 then (* foo *)
+    a + b
+  else (* foo *)
+    a - b
 
 let foo =
   if cmp < 0 then (* ast higher precedence than context: no parens *)
@@ -128,6 +133,42 @@ let foo =
 
 let _ =
   if fooo then ( + )
-  else if bar then ( * )
+  else if bar then ( * ) [@attr]
   else if foobar then ( / )
   else ( - )
+
+let _ =
+  if x then
+    (fun xxxxxxxxxxxxxxxxx yyyyyyyyyyyyyyyyyyyy zzzzzzzzzzz ->
+       xxxxxxxxx yyyyyyyyyy zzzzzzzzzzzz)
+  else
+    (fun xxxxxxxxxxxxxxxxx yyyyyyyyyyyyyyyyyyyy zzzzzzzzzzz ->
+       xxxxxxxxx yyyyyyyyyy zzzzzzzzzzzz)
+
+let _ =
+  if
+    (* foooooooooooooooooooooooooooooooooooooooooo *)
+    foooooooooooooooooooooooooooooooooooooooooo
+  then foooooooooooooooooooooooooooooooooooooooooo
+  else foooooooooooooooooooooooooooooooooooooooooo
+
+let _ =
+  if (* foo *)
+    foo then 0
+  else if (* bar *)
+    bar then 1
+  else 2
+
+let compare s1 s2 =
+  if String.equal s1 s2 then (* this simplifies the next two cases *)
+    0
+  else if String.equal s1 Cmdliner.Manpage.s_options then
+    (* ensure OPTIONS section is last (hence first in the manual) *)
+    1
+  else if String.equal s2 Cmdliner.Manpage.s_options then (* same as above *)
+    -1
+  else (* reverse order *)
+    String.compare s2 s1
+
+let _ = if x then 42 (* dummy *) else y
+let _ = if x then 42 (* dummy *) else if y then z else w

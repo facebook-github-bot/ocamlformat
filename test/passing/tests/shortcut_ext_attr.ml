@@ -29,48 +29,49 @@ let () =
   [%foo new x [@foo]] ;
   [%foo
     match[@foo] () with
-    | [%foo? (* Pattern expressions *)
-        ((lazy x) [@foo])] -> ()
+    | [%foo?
+        (* Pattern expressions *)
+        ((lazy x) [@foo])] ->
+        ()
     | [%foo? ((exception x) [@foo])] -> ()]
 
 (* Class expressions *)
 class x =
   fun [@foo] x ->
-    let[@foo] x = 33 in
-    object
-      inherit x [@@foo]
+  let[@foo] x = 33 in
+  object
+    inherit x [@@foo]
 
-      val x = 333 [@@foo]
+    val x = 333 [@@foo]
 
-      val virtual x : t [@@foo]
+    val virtual x : t [@@foo]
 
-      val! mutable x = 3 [@@foo]
+    val! mutable x = 3 [@@foo]
 
-      method x = 3 [@@foo]
+    method x = 3 [@@foo]
 
-      method virtual x : t [@@foo]
+    method virtual x : t [@@foo]
 
-      method! private x = 3 [@@foo]
+    method! private x = 3 [@@foo]
 
-      initializer x [@@foo]
-    end
-    [@foo]
+    initializer x [@@foo]
+  end
+  [@foo]
 
 (* Class type expressions *)
-class type t =
-  object
-    inherit t [@@foo]
+class type t = object
+  inherit t [@@foo]
 
-    val x : t [@@foo]
+  val x : t [@@foo]
 
-    val mutable x : t [@@foo]
+  val mutable x : t [@@foo]
 
-    method x : t [@@foo]
+  method x : t [@@foo]
 
-    method private x : t [@@foo]
+  method private x : t [@@foo]
 
-    constraint t = t' [@@foo]
-  end[@foo]
+  constraint t = t' [@@foo]
+end[@foo]
 
 (* Type expressions *)
 type t = [%foo: ((module M)[@foo])]
@@ -107,12 +108,12 @@ exception%foo X [@@foo]
 module%foo M = M [@@foo]
 
 module%foo rec M : S = M [@@foo]
+
 and M : S = M [@@foo]
 
 module type%foo S = S [@@foo]
 
 include%foo M [@@foo]
-
 open%foo M [@@foo]
 
 (* Signature items *)
@@ -129,13 +130,14 @@ module type S = sig
 
   [%%foo: exception X [@@foo]]
 
-  [%%foo: module M : S [@@foo]]
+  [%%foo: module [@foo] M : S]
 
   [%%foo:
-  module rec M : S [@@foo]
-  and M : S [@@foo]]
+  module [@foo] rec M : S
 
-  [%%foo: module M = M [@@foo]]
+  and [@foo] M : S]
+
+  [%%foo: module [@foo] M = M]
 
   [%%foo: module type S = S [@@foo]]
 

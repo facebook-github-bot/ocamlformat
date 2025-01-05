@@ -1,43 +1,81 @@
 name: Build mingw64 binary
 
 on:
+  release:
+    types: [released]
   workflow_dispatch:
     inputs:
       ref:
         required: true
-        default: 'master'
-
-env:
-  CYGWINSETUP: setup-x86_64.exe
-  PACKAGES: git,m4,patchutils,make,curl,unzip,mingw64-x86_64-binutils,mingw64-x86_64-gcc-core,mingw64-x86_64-headers,mingw64-x86_64-runtime
-  SITE: https://mirrors.kernel.org/sourceware/cygwin
+        default: 'main'
 
 jobs:
   build:
     runs-on: windows-latest
-    env:
-      SHELLOPTS: igncr
     steps:
+      - name: Set ref for release builds
+        if: github.event_name == 'release'
+        run: |
+          "build_ref=${{ github.ref }}" >> $env:GITHUB_ENV
+
+      - name: Set ref for manual builds
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          "build_ref=${{ github.event.inputs.ref }}" >> $env:GITHUB_ENV
+
+      - name: Set artifact name
+        shell: bash
+        run: |
+          echo "artifact_name=ocamlformat-${build_ref##*/}.exe" >> $GITHUB_ENV
+
+      - name: Disable Git EOL Conversion
+        run: |
+          git config --global core.autocrlf false
+
       - name: Checkout Repository
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
         with:
-          ref: ${{ github.event.inputs.ref }}
-      - name: Download Cygwin Installer
+          ref: ${{ env.build_ref }}
+
+      - uses: ocaml/setup-ocaml@v2
+        with:
+          ocaml-compiler: 4.14.x
+          opam-repositories: |
+            default: https://github.com/ocaml-opam/opam-repository-mingw.git#sunset
+            opam: https://github.com/ocaml/opam-repository.git
+
+      - name: Install dependencies
         run: |
-          curl.exe -o C:\${{ env.CYGWINSETUP }} https://www.cygwin.com/${{ env.CYGWINSETUP }}
-        shell: cmd
-      - name: Setup Cygwin
+          opam pin add -yn ocamlformat-lib.dev .
+          opam pin add -yn ocamlformat.dev .
+          opam install -y --deps-only ocamlformat
+
+      - name: Build
         run: |
-          C:\${{ env.CYGWINSETUP }} -A -q -D -L -g -o -s ${{ env.SITE }} -l C:\cygwin64-cache -R C:\cygwin64 -C Base -P ${{ env.PACKAGES }}
-        shell: cmd
-      - name: Run Build Script
+          opam exec -- dune subst
+          opam exec -- dune build -p ocamlformat-lib,ocamlformat @install
+          opam exec -- dune install --prefix=install ocamlformat
+          Copy-Item ${{ github.workspace }}\\install\\bin\\ocamlformat.exe -Destination .\${{ env.artifact_name }}
+
+      - name: Version check
         run: |
-          cd '${{ github.workspace }}'
-          bash tools/build-mingw64.sh
-        shell: C:\cygwin64\bin\bash.exe --login --norc '{0}'
+          echo "Version check:"
+          install/bin/ocamlformat.exe --version
+
       - name: Upload Artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
-          name: ocamlformat-${{ github.event.inputs.ref }}.exe
-          path: ${{ github.workspace }}\_build\install\default\bin\ocamlformat.exe
+          name: ${{ env.artifact_name }}
+          path: ${{ env.artifact_name }}
           if-no-files-found: error
+
+      - name: Upload Release Asset
+        if: github.event_name == 'release'
+        run: >
+          curl.exe
+          --data-binary '@${{ env.artifact_name }}'
+          -X POST
+          -H "Content-Type: application/octet-stream"
+          -H "Accept: application/vnd.github+json"
+          -H "Authorization: Bearer ${{ github.token }}"
+          "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ github.event.release.id }}/assets?name=${{ env.artifact_name }}"

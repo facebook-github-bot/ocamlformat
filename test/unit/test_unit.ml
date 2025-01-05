@@ -46,7 +46,7 @@ module Test_noit = struct
     let compare_width_decreasing (sa, ea) (sb, eb) =
       Poly.compare (sa, -ea) (sb, -eb)
 
-    let pp ppf (s, e) = Caml.Format.fprintf ppf "(%d, %d)" s e
+    let pp ppf (s, e) = Stdlib.Format.fprintf ppf "(%d, %d)" s e
 
     let equal = Poly.equal
   end
@@ -112,11 +112,12 @@ end
 
 let tests =
   [ ("Location", Test_location.tests)
+  ; ("Conf", Test_conf.tests)
+  ; ("Eol_compat", Test_eol_compat.tests)
   ; ("non overlapping interval tree", Test_noit.tests)
   ; ("Ast", Test_ast.tests)
-  ; ("Indent", Test_indent.tests)
   ; ("Literal_lexer", Test_literal_lexer.tests)
   ; ("Fmt", Test_fmt.tests)
   ; ("Translation_unit", Test_translation_unit.tests) ]
 
-let () = Alcotest.run "ocamlformat" tests
+let () = Alcotest.run "ocamlformat" tests ~compact:true

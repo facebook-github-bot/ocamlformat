@@ -128,3 +128,14 @@ let _ =
   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
   >= (* ___________________________________ *)
   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+let _ =
+    List.filter
+      (fun s ->
+         ((* 3.1. the sid of the authenticated user *)
+           foooooooooooooooooooooooooooooo
+           || (* 3.2. any sids of the group that authenticated the user *)
+           (* TODO: better to look up the membership closure *)
+           fooooooooooooooooooooooooooo
+         )
+      )

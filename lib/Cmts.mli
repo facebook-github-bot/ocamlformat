@@ -23,8 +23,6 @@
     removed from the data structure. This is significant in cases where there
     are multiple Ast terms with the same location. *)
 
-module Format = Format_
-
 type t
 
 val init :
@@ -49,7 +47,7 @@ val relocate_wrongfully_attached_cmts :
 val fmt_before :
      t
   -> Conf.t
-  -> fmt_code:(Conf.t -> string -> (Fmt.t, unit) Result.t)
+  -> fmt_code:Fmt_odoc.fmt_code
   -> ?pro:Fmt.t
   -> ?epi:Fmt.t
   -> ?eol:Fmt.t
@@ -62,9 +60,10 @@ val fmt_before :
 val fmt_after :
      t
   -> Conf.t
-  -> fmt_code:(Conf.t -> string -> (Fmt.t, unit) Result.t)
+  -> fmt_code:Fmt_odoc.fmt_code
   -> ?pro:Fmt.t
   -> ?epi:Fmt.t
+  -> ?filter:(Cmt.t -> bool)
   -> Location.t
   -> Fmt.t
 (** [fmt_after loc] formats the comments associated with [loc] that appear
@@ -73,7 +72,7 @@ val fmt_after :
 val fmt_within :
      t
   -> Conf.t
-  -> fmt_code:(Conf.t -> string -> (Fmt.t, unit) Result.t)
+  -> fmt_code:Fmt_odoc.fmt_code
   -> ?pro:Fmt.t
   -> ?epi:Fmt.t
   -> Location.t
@@ -83,20 +82,12 @@ val fmt_within :
 
 module Toplevel : sig
   val fmt_before :
-       t
-    -> Conf.t
-    -> fmt_code:(Conf.t -> string -> (Fmt.t, unit) Result.t)
-    -> Location.t
-    -> Fmt.t
+    t -> Conf.t -> fmt_code:Fmt_odoc.fmt_code -> Location.t -> Fmt.t
   (** [fmt_before loc] formats the comments associated with [loc] that appear
       before [loc]. *)
 
   val fmt_after :
-       t
-    -> Conf.t
-    -> fmt_code:(Conf.t -> string -> (Fmt.t, unit) Result.t)
-    -> Location.t
-    -> Fmt.t
+    t -> Conf.t -> fmt_code:Fmt_odoc.fmt_code -> Location.t -> Fmt.t
   (** [fmt_after loc] formats the comments associated with [loc] that appear
       after [loc]. *)
 end
@@ -121,10 +112,6 @@ val remaining_locs : t -> Location.t list
 
 val remaining_before : t -> Location.t -> Cmt.t list
 (** [remaining_before c loc] returns the comments before [loc] *)
-
-val diff :
-  Conf.t -> Cmt.t list -> Cmt.t list -> (string, string) Either.t Sequence.t
-(** Difference between two lists of comments. *)
 
 type layout_cache_key =
   | Arg of Asttypes.arg_label * Parsetree.expression

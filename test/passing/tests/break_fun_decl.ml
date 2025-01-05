@@ -55,11 +55,11 @@ let fffffffffffffffffffffffffffffffffff x yyyyyyyyyyyyyyyyyyyyyyyyyyy
 
 class ffffffffffffffffffff =
   object
-    method ffffffffffffffffffff
-        :    aaaaaaaaaaaaaaaaaaaaaa
-          -> bbbbbbbbbbbbbbbbbbbbbb
-          -> cccccccccccccccccccccc
-          -> dddddddddddddddddddddd =
+    method ffffffffffffffffffff :
+           aaaaaaaaaaaaaaaaaaaaaa
+        -> bbbbbbbbbbbbbbbbbbbbbb
+        -> cccccccccccccccccccccc
+        -> dddddddddddddddddddddd =
       g
 
     val ffffffffffffffffffff
@@ -70,26 +70,58 @@ class ffffffffffffffffffff =
       g
   end
 
-class type ffffffffffffffffffff =
-  object
-    method ffffffffffffffffffff :
-         aaaaaaaaaaaaaaaaaaaaaa
-      -> bbbbbbbbbbbbbbbbbbbbbb
-      -> cccccccccccccccccccccc
-      -> dddddddddddddddddddddd
+class type ffffffffffffffffffff = object
+  method ffffffffffffffffffff :
+       aaaaaaaaaaaaaaaaaaaaaa
+    -> bbbbbbbbbbbbbbbbbbbbbb
+    -> cccccccccccccccccccccc
+    -> dddddddddddddddddddddd
 
-    val ffffffffffffffffffff :
-         aaaaaaaaaaaaaaaaaaaaaa
-      -> bbbbbbbbbbbbbbbbbbbbbb
-      -> cccccccccccccccccccccc
-      -> dddddddddddddddddddddd
+  val ffffffffffffffffffff :
+       aaaaaaaaaaaaaaaaaaaaaa
+    -> bbbbbbbbbbbbbbbbbbbbbb
+    -> cccccccccccccccccccccc
+    -> dddddddddddddddddddddd
 
-    val ffffffffffffffffffff :
-         (   aaaaaaaaaaaaaaaaaaaaaa
-          -> bbbbbbbbbbbbbbbbbbbbbb
-          -> cccccccccccccccccccccc
-          -> dddddddddddddddddddddd )
-      -> bbbbbbbbbbbbbbbbbbbbbb
-      -> cccccccccccccccccccccc
-      -> dddddddddddddddddddddd
-  end
+  val ffffffffffffffffffff :
+       (   aaaaaaaaaaaaaaaaaaaaaa
+        -> bbbbbbbbbbbbbbbbbbbbbb
+        -> cccccccccccccccccccccc
+        -> dddddddddddddddddddddd )
+    -> bbbbbbbbbbbbbbbbbbbbbb
+    -> cccccccccccccccccccccc
+    -> dddddddddddddddddddddd
+end
+
+let _ =
+ fun (module Store : Irmin.Generic_key.S with type repo = repo)
+     (module Store : Irmin.Generic_key.S with type repo = repo) ->
+  body
+
+let _ =
+  f
+    (fun
+      (module Store : Irmin.Generic_key.S with type repo = repo)
+      (module Store : Irmin.Generic_key.S with type repo = repo)
+    -> body )
+
+let f (module Store : Irmin.Generic_key.S with type repo = repo)
+    (module Store : Irmin.Generic_key.S with type repo = repo) =
+  body
+
+(* Inconsistent formatting of fun arguments. *)
+
+let new_specialised_args =
+  Variable.Map.mapi
+    (fun new_inner_var______ (definition : Definition.t) :
+         Flambda.specialised_to -> () )
+    foo
+
+let new_specialised_args =
+  Variable.Map.mapi
+    (fun
+      new_inner_var______
+      (definition : Definition.t)
+      :
+      Flambda.specialised_to
+    -> () )

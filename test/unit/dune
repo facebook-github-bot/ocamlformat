@@ -1,4 +1,6 @@
 (test
  (name test_unit)
- (package ocamlformat)
- (libraries alcotest base ocamlformat_lib))
+ (package ocamlformat-lib)
+ (flags
+  (:standard -open Ocamlformat_format))
+ (libraries alcotest base ocamlformat-lib))

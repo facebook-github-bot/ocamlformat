@@ -263,3 +263,35 @@ let _ = M.((f, f ) (* B *))
 let _ = M.((* A *) (f, f) (* B *))
 
 let _ = M.((* A *) (f, f) (* B *) [@warning "foo"] (* C *))
+
+let _ =
+  let _ =
+    Fooooooo.
+      [
+        (swap_1_c, { minimum_transfert_amount = 0. });
+        (swap_2_c, { minimum_transfert_amount = 0. });
+        (swap_3_c, { minimum_transfert_amount = 0. });
+      ]
+  in
+  ()
+
+let _ =
+  match Uri.scheme uri with
+  | Some _ -> (
+      (* we have an absoluteURI *)
+      Uri.(
+        match path uri with "" -> with_path uri "/" | _ -> uri))
+
+(* Ptyp_open *)
+
+let _ : M.(foo * M.(bar)) = ()
+let _ : M.(foo) * M.(bar) = ()
+let _ : M.([ `Foo of foo ]) = ()
+let _ : M.N.(foo) = ()
+let _ : M.(foooooooooooooooooooooooooooooooooooooooo * foooooooooooooooooooooooooooooooooooooooo) = ()
+let _ : M.([ `Foo of foooooooooooooooooooooooooooooooooooooooo * foooooooooooooooooooooooooooooooooooooooo]) = ()
+
+let _ : M.(foo [@attr]) = ()
+let _ : M.(foo)[@attr] = ()
+let _ : M.(foo [@attr] [@attr]) = ()
+let _ : M.(foo [@attr])[@attr] = ()

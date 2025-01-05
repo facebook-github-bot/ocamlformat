@@ -9,12 +9,27 @@
 (*                                                                        *)
 (**************************************************************************)
 
-val fmt :
-  fmt_code:(string -> (Fmt.t, unit) Result.t) -> Odoc_parser.Ast.t -> Fmt.t
+(** [offset] is the column at which the content of the comment begins. It is
+    used to adjust the margin. *)
+type fmt_code =
+     Conf.t
+  -> offset:int
+  -> set_margin:bool
+  -> string
+  -> (Fmt.t, [`Msg of string]) Result.t
 
-val diff :
-  Conf.t -> Cmt.t list -> Cmt.t list -> (string, string) Either.t Sequence.t
-(** Difference between two lists of doc comments. *)
+val fmt_ast :
+  Conf.t -> fmt_code:fmt_code -> Ocamlformat_odoc_parser.Ast.t -> Fmt.t
 
-val is_tag_only : Odoc_parser.Ast.t -> bool
-(** [true] if the documentation only contains tags *)
+val fmt_parsed :
+     Conf.t
+  -> ?trailing_space:Fmt.t
+  -> fmt_code:fmt_code
+  -> input:string
+  -> offset:int
+  -> ( Ocamlformat_odoc_parser.Ast.t
+     , Ocamlformat_odoc_parser.Warning.t list )
+     Result.t
+  -> Fmt.t
+(** [source] is the global source in which the locations in the AST make
+    sense. [input] is the content of the doc-comment. *)

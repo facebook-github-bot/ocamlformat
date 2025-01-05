@@ -84,6 +84,15 @@ let foo x y =
   cleanup x y
 
 let foo x y =
+  do_some_setup x ;
+  let () = do_some_setup y in
+
+  (* Empty line after let but before comment *)
+  important_function x ;
+  another_important_function x y ;
+  cleanup x y
+
+let foo x y =
   (* in should not cause an empty line *)
   let () = do_some_setup x
   in
@@ -93,7 +102,6 @@ let foo x y =
   another_important_function x y ;
   cleanup x y
 
-(* This test require --max-iter=3 *)
 let _ =
   some statement;
   (* comment with an empty line in it

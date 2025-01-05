@@ -2,9 +2,9 @@ let _ = List.map ~f:(( + ) (M.f x))
 
 let id x = x
 
-let plus a ?(b = 0) c = a + b + c;;
+let plus a ?(b = 0) c = a + b + c ;;
 
-id (plus 1) ~b:1;;
+id (plus 1) ~b:1 ;;
 
 (* The version above does not type-check, while the version below does
    type-check, and should not be formatted to the above. See
@@ -43,6 +43,19 @@ let whatever_labelled a_function_name long_list_one some_other_thing =
       do_something_with_a_function_and_some_things a_function_name
         long_list_one_elt some_other_thing )
 
+let eradicate_meta_class_is_nullsafe =
+  register ~id:"ERADICATE_META_CLASS_IS_NULLSAFE"
+    ~hum:"Class is marked @Nullsafe and has 0 issues"
+      (* Should be enabled for special integrations *) ~enabled:false Info Eradicate (* TODO *)
+    ~user_documentation:""
+
+let eradicate_meta_class_is_nullsafe =
+  register ~id:"ERADICATE_META_CLASS_IS_NULLSAFE"
+    ~hum:(* Should be enabled for special integrations *)
+      "Class is marked @Nullsafe and has 0 issues"
+      (* Should be enabled for special integrations *)
+    ~enabled:false Info
+
 [@@@ocamlformat "indicate-multiline-delimiters=closing-on-separate-line"]
 
 let cartesian_product' long_list_one long_list_two =
@@ -66,7 +79,7 @@ let whatever_labelled a_function_name long_list_one some_other_thing =
   )
 ;;
 
-(a - b) ();;
+(a - b) () ;;
 
 ((a - b) [@foo]) ()
 
@@ -83,3 +96,7 @@ let _ =
     (loooooooooooong looooooooooooooong loooooooooooooong
        [loooooooooong; loooooooooooong; loooooooooooooooooooooong]
     )
+
+let f (x :: y) = x
+
+let f (* xx *) ((* aa *) x (* bb *) :: (* cc *) y (* dd *)) (* yy *) = x

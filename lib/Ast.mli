@@ -18,8 +18,25 @@ val init : Conf.t -> unit
 (** Initialize internal state *)
 
 module Attr : sig
+  module Key : sig
+    type t =
+      | Regular  (** [@attr] *)
+      | Item  (** [@@attr] *)
+      | Floating  (** [@@@attr] *)
+
+    val to_string : t -> string
+  end
+
   val is_doc : attribute -> bool
   (** Holds for docstrings, that are attributes of the form [(** ... *)]. *)
+end
+
+module Ext : sig
+  module Key : sig
+    type t = Regular  (** [%ext] *) | Item  (** [%%ext] *)
+
+    val to_string : t -> string
+  end
 end
 
 module Token : sig
@@ -27,45 +44,9 @@ module Token : sig
   (** Holds for infix symbols. *)
 end
 
-module String_id : sig
-  val is_prefix : string -> bool
-  (** Holds for prefix symbols. *)
-
-  val is_infix : string -> bool
-  (** Holds for infix symbols. *)
-
-  val is_symbol : string -> bool
-  (** Holds for prefix or infix symbols. *)
-
-  val is_hash_getter : string -> bool
-  (** [is_hash_getter id] returns whether [id] is considered a hash-getter
-      operator, of the form [#**#] or [#**.] where [**] can be 0 or more
-      operator chars. *)
-
-  val is_monadic_binding : string -> bool
-  (** [is_monadic_binding id] returns whether [id] is a monadic binding
-      operator of the form [let**] or [and**] where [**] can be 1 or more
-      operator chars. *)
-end
-
-module Longident : sig
-  include module type of Longident
-
-  val is_infix : t -> bool
-  (** Holds for infix identifiers. *)
-
-  val is_hash_getter : t -> bool
-  (** [is_hash_getter id] returns whether [id] is considered a hash-getter
-      operator, of the form [#**#] or [#**.] where [**] can be 0 or more
-      operator chars. *)
-
-  val is_monadic_binding : t -> bool
-  (** [is_monadic_binding id] returns whether [id] is a monadic binding
-      operator of the form [let**] or [and**] where [**] can be 1 or more
-      operator chars. *)
-end
-
 module Exp : sig
+  val location : expression -> Location.t
+
   val is_prefix : expression -> bool
   (** Holds for prefix symbol expressions. *)
 
@@ -82,43 +63,19 @@ module Exp : sig
       prefix operators. *)
 end
 
-module Indexing_op : sig
-  type brackets = Round | Square | Curly
-
-  type custom_operator =
-    { path: string list  (** eg. [a.X.Y.*{b}] *)
-    ; opchars: string
-    ; brackets: brackets }
-
-  type indexing_op =
-    | Defined of expression * custom_operator
-        (** [.*( a )]: take a single argument *)
-    | Extended of expression list * custom_operator
-        (** [.*( a; b; c )]: take several arguments, separated by [;] *)
-    | Special of expression list * brackets
-        (** [.()], [.\[\]] and bigarray operators: take several arguments,
-            separated by [,] *)
-
-  type t =
-    { lhs: expression
-    ; op: indexing_op
-    ; rhs: expression option  (** eg. [a.*{b} <- exp] *)
-    ; loc: Location.t }
-
-  val get_sugar :
-    expression -> (Asttypes.arg_label * expression) list -> t option
-  (** [get_sugar e args] is [Some all] if [e] is an identifier that is an
-      indexing operator and if the sugar syntax is already used in the
-      source, [None] otherwise. [args] should be the arguments of the
-      corresponding [Pexp_apply]. *)
-end
-
 val doc_atrs :
      ?acc:(string Location.loc * bool) list
   -> attributes
   -> (string Location.loc * bool) list option * attributes
 
+type cmt_checker =
+  { cmts_before: Location.t -> bool
+  ; cmts_within: Location.t -> bool
+  ; cmts_after: Location.t -> bool }
+
 module Pat : sig
+  val location : pattern -> Location.t
+
   val is_simple : pattern -> bool
 end
 
@@ -149,10 +106,19 @@ type toplevel_item =
 type t =
   | Pld of payload
   | Typ of core_type
+  | Td of type_declaration
   | Cty of class_type
+  | Cd of class_declaration
+  | Ctd of class_type_declaration
   | Pat of pattern
   | Exp of expression
-  | Vb of value_binding
+  | Fpe of expr_function_param
+  | Fpc of class_function_param
+  | Vc of value_constraint
+  | Lb of value_binding
+  | Bo of binding_op
+  | Mb of module_binding
+  | Md of module_declaration
   | Cl of class_expr
   | Mty of module_type
   | Mod of module_expr
@@ -162,17 +128,12 @@ type t =
   | Ctf of class_type_field
   | Tli of toplevel_item
   | Top
+  | Rep  (** Repl phrase *)
 
 val is_top : t -> bool
 
 val break_between :
-     Source.t
-  -> cmts:'a
-  -> has_cmts_before:('a -> Location.t -> bool)
-  -> has_cmts_after:('a -> Location.t -> bool)
-  -> t * Conf.t
-  -> t * Conf.t
-  -> bool
+  Source.t -> cmt_checker -> t * Conf.t -> t * Conf.t -> bool
 
 val attributes : t -> attributes
 
@@ -188,6 +149,9 @@ type 'a xt = private {ctx: t; ast: 'a}
 val sub_typ : ctx:t -> core_type -> core_type xt
 (** Construct a core_type-in-context. *)
 
+val sub_td : ctx:t -> type_declaration -> type_declaration xt
+(** Construct a type_declaration-in-context. *)
+
 val sub_cty : ctx:t -> class_type -> class_type xt
 (** Construct a class_type-in-context. *)
 
@@ -200,17 +164,31 @@ val sub_exp : ctx:t -> expression -> expression xt
 val sub_cl : ctx:t -> class_expr -> class_expr xt
 (** Construct a class_expr-in-context. *)
 
+val sub_cf : ctx:t -> class_field -> class_field xt
+(** Construct a class_field-in-context. *)
+
+val sub_ctf : ctx:t -> class_type_field -> class_type_field xt
+(** Construct a class_type_field-in-context. *)
+
 val sub_mty : ctx:t -> module_type -> module_type xt
 (** Construct a module_type-in-context. *)
 
 val sub_mod : ctx:t -> module_expr -> module_expr xt
 (** Construct a module_expr-in-context. *)
 
+val sub_md : ctx:t -> module_declaration -> module_declaration xt
+(** Construct a module_declaration-in-context. *)
+
+val sub_mb : ctx:t -> module_binding -> module_binding xt
+(** Construct a module_binding-in-context. *)
+
 val sub_sig : ctx:t -> signature_item -> signature_item xt
 (** Construct a signature_item-in-context. *)
 
 val sub_str : ctx:t -> structure_item -> structure_item xt
 (** Construct a structure_item-in-context. *)
+
+val sub_fun_body : ctx:t -> function_body -> function_body xt
 
 val is_simple : Conf.t -> (expression xt -> int) -> expression xt -> bool
 (** Holds of "simple" expressions: constants and constructor and function
@@ -259,6 +237,6 @@ val parenze_mod : module_expr xt -> bool
 (** [parenze_mod xmod] holds when module_expr-in-context [xmod] should be
     parenthesized. *)
 
-val is_displaced_infix_op : expression xt -> bool
-(** [is_displaced_infix_op xexp] holds if an expression-in-context [xexp] is
-    an infix op that is not fully applied. *)
+module Ext_attrs : sig
+  val has_attrs : ext_attrs -> bool
+end

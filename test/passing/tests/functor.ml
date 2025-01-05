@@ -70,14 +70,24 @@ module type KV_MAKER = functor (G : Irmin_git.G) (C : Irmin.Contents.S) ->
 
 module Make
     (TT : TableFormat.TABLES)
-    (IT : InspectionTableFormat.TABLES with type 'a lr1state = int)
-    (ET : EngineTypes.TABLE
-            with type terminal = int
-             and type nonterminal = int
-             and type semantic_value = Obj.t)
+    (IT :
+      InspectionTableFormat.TABLES__________________________________________)
+    (ET :
+      EngineTypes.TABLE
+        with type terminal = int
+         and type nonterminal = int
+         and type semantic_value = Obj.t)
     (E : sig
       type 'a env = (ET.state, ET.semantic_value, ET.token) EngineTypes.env
     end) =
+struct
+  type t = t
+end
+
+module Make
+    (TT : TableFormat.TABLES)
+    (IT :
+      InspectionTableFormat.TABLES__________________________________________) =
 struct
   type t = t
 end
@@ -88,3 +98,15 @@ module M = functor (_ : S) -> struct end
 module M (_ : S) = struct end
 
 module M : functor (_ : S) -> S' = functor (_ : S) -> struct end
+
+module type SETFUNCTOR = (Elt : ORDERED_TYPE) -> sig end
+
+module WrongSet : (Elt : ORDERED_TYPE) -> SET = Set
+
+module M : (A : S) (B : S) -> S = N
+module M : (A : S) -> (B : S) -> S = N
+module M : functor (A : S) -> (B : S) -> S = N
+module M : functor (A : S) -> functor (B : S) -> S = N
+module M : functor (A : S) (B : S) -> S = N
+module M : functor (A : S) -> functor (B : S) -> S = N
+module M : (A : S) -> functor (B : S) -> S = N

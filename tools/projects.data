@@ -1,0 +1,6 @@
+github,mirage,mirage,
+github,ocaml,dune,<no-ignore-revs><signoff>
+github,ocaml,merlin,
+github,ocaml,odoc,
+github,ocaml-ppx,ppxlib,<signoff>
+github,ocsigen,js_of_ocaml,

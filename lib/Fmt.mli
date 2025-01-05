@@ -11,11 +11,6 @@
 
 (** Formatting combinators *)
 
-module Format = Format_
-
-(** Format strings that accept no arguments. *)
-type s = (unit, Format.formatter, unit) format
-
 (** Format thunks. *)
 type t
 
@@ -42,19 +37,40 @@ val lazy_ : (unit -> t) -> t
 val set_margin : int -> t
 (** Set the margin. *)
 
-val set_max_indent : int -> t
+val set_max_indent : int option -> t
 (** Set the maximum indentation. *)
 
-val eval : Format.formatter -> t -> unit
+val eval : Format_.formatter -> t -> unit
 (** [eval fs t] runs format thunk [t] outputting to [fs] *)
 
 val protect : t -> on_error:(exn -> unit) -> t
 (** Catch exceptions raised while formatting. *)
 
+val str_length : string -> int
+(** Length that will be accounted when the given string is outputted. *)
+
 (** Break hints and format strings --------------------------------------*)
 
 val break : int -> int -> t
 (** Format a break hint. *)
+
+val force_break : t
+(** [force_break] forces a break with indentation 0. Equivalent to [break 1000 0].*)
+
+val space_break : t
+(** [space_break] is either a single space or a newline.
+    See {!Stdlib.Format.print_space_break}.
+    Equivalement to format syntax ["@ "].*)
+
+val cut_break : t
+(** [cut_break] is either a newline or a {!noop}.
+    See {!Stdlib.Format.print_cut}.
+    Equivalement to format syntax ["@,"].*)
+
+val force_newline : t
+(** [force_newline] force a new line in the current pretty-printing box.
+    See {!Stdlib.Format.force_newline}.
+    Equivalement to format syntax ["@\n"].*)
 
 val cbreak : fits:string * int * string -> breaks:string * int * string -> t
 (** Format a custom break.
@@ -67,9 +83,6 @@ val cbreak : fits:string * int * string -> breaks:string * int * string -> t
 val noop : t
 (** Format nothing. *)
 
-val fmt : s -> t
-(** Format a format string. *)
-
 (** Primitive types -----------------------------------------------------*)
 
 val char : char -> t
@@ -78,14 +91,13 @@ val char : char -> t
 val str : string -> t
 (** Format a string. *)
 
+val str_as : int -> string -> t
+(** [str_as a len] formats a string as if it were of length [len]. *)
+
 (** Primitive containers ------------------------------------------------*)
 
 val opt : 'a option -> ('a -> t) -> t
 (** Format an option using provided formatter for the element. *)
-
-val list : 'a list -> s -> ('a -> t) -> t
-(** Format a list separated by a format string using provided function for
-    the elements. *)
 
 val list_fl : 'a list -> (first:bool -> last:bool -> 'a -> t) -> t
 (** Format a list using provided function for the elements, which is passed
@@ -95,21 +107,15 @@ val list_pn : 'a list -> (prev:'a option -> 'a -> next:'a option -> t) -> t
 (** Format a list using provided function for the elements, which is passed
     the previous and next elements, if any. *)
 
-val list_k : 'a list -> t -> ('a -> t) -> t
+val list : 'a list -> t -> ('a -> t) -> t
 (** Format a list using the format thunk for the separators between elements. *)
 
 (** Conditional formatting ----------------------------------------------*)
 
-val fmt_if : bool -> s -> t
-(** Conditionally format. *)
-
-val fmt_if_k : bool -> t -> t
+val fmt_if : bool -> t -> t
 (** Conditionally format thunk. *)
 
-val fmt_or : bool -> s -> s -> t
-(** Conditionally select between two format strings. *)
-
-val fmt_or_k : bool -> t -> t -> t
+val fmt_or : bool -> t -> t -> t
 (** Conditionally select between two format thunks. *)
 
 val fmt_opt : t option -> t
@@ -147,22 +153,11 @@ val fits_breaks_if :
 
 (** Wrapping ------------------------------------------------------------*)
 
-val wrap : s -> s -> t -> t
-(** [wrap prologue epilogue body] formats [prologue] then [body] then
-    [epilogue]. *)
-
-val wrap_k : t -> t -> t -> t
+val wrap : t -> t -> t -> t
 (** As [wrap], but prologue and epilogue may be arbitrary format thunks. *)
 
-val wrap_if : bool -> s -> s -> t -> t
-(** As [wrap], but prologue and epilogue are only formatted conditionally. *)
-
-val wrap_if_k : bool -> t -> t -> t -> t
+val wrap_if : bool -> t -> t -> t -> t
 (** As [wrap_if], but prologue and epilogue may be arbitrary format thunks. *)
-
-val wrap_if_fits_and : bool -> string -> string -> t -> t
-(** As [wrap_if_fits], but prologue and epilogue are formatted subject to the
-    additional condition. *)
 
 val wrap_if_fits_or : bool -> string -> string -> t -> t
 (** As [wrap_if_fits], but prologue and epilogue can be forced by the
@@ -224,8 +219,3 @@ val hvbox_if : ?name:string -> bool -> int -> t -> t
 val hovbox_if : ?name:string -> bool -> int -> t -> t
 (** Conditionally wrap a format thunk with an hovbox with specified
     indentation. *)
-
-(** Text filling --------------------------------------------------------*)
-
-val fill_text : ?epi:string -> string -> t
-(** Format a non-empty string as filled text wrapped at the margin. *)

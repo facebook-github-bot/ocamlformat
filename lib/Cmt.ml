@@ -12,157 +12,188 @@
 open Migrate_ast
 
 module T = struct
-  type t = {txt: string; loc: Location.t}
+  type t =
+    | Comment of {txt: string; loc: Location.t}
+    | Docstring of {txt: string; loc: Location.t}
 
-  let loc t = t.loc
+  let loc (Comment {loc; _} | Docstring {loc; _}) = loc
 
-  let txt t = t.txt
+  let txt (Comment {txt; _} | Docstring {txt; _}) = txt
 
-  let create txt loc = {txt; loc}
+  let create_comment txt loc = Comment {txt; loc}
 
-  let compare =
-    Comparable.lexicographic
-      [ Comparable.lift String.compare ~f:txt
-      ; Comparable.lift Location.compare ~f:loc ]
+  let create_docstring txt loc = Docstring {txt; loc}
 
-  let sexp_of_t {txt; loc} =
-    Sexp.Atom (Format.asprintf "%s %a" txt Migrate_ast.Location.fmt loc)
+  let is_docstring = function Comment _ -> false | Docstring _ -> true
+
+  let compare = Poly.compare
+
+  let sexp_of_t cmt =
+    let kind, txt, loc =
+      match cmt with
+      | Comment {txt; loc} -> ("comment", txt, loc)
+      | Docstring {txt; loc} -> ("docstring", txt, loc)
+    in
+    Sexp.List
+      [ Sexp.Atom kind
+      ; Sexp.Atom txt
+      ; Sexp.Atom (Format.asprintf "%a" Migrate_ast.Location.fmt loc) ]
 end
 
 include T
 include Comparator.Make (T)
-open Fmt
+
+type error =
+  { kind: [`Added of t | `Modified of t * t | `Dropped of t]
+  ; cmt_kind: [`Comment | `Doc_comment] }
+
+let pp_error fs {kind; cmt_kind} =
+  let pp_cmt fs x =
+    match cmt_kind with
+    | `Doc_comment -> Format.fprintf fs "(** %s *)" (txt x)
+    | `Comment -> Format.fprintf fs "(* %s *)" (txt x)
+  in
+  let s_kind =
+    match cmt_kind with
+    | `Doc_comment -> "doc-comment"
+    | `Comment -> "comment"
+  in
+  match kind with
+  | `Added x ->
+      Format.fprintf fs "%!@{<loc>%a@}:@,@{<error>Error@}: %s %a added.\n%!"
+        Location.print_loc (loc x) s_kind pp_cmt x
+  | `Dropped x ->
+      Format.fprintf fs
+        "%!@{<loc>%a@}:@,@{<error>Error@}: %s %a dropped.\n%!"
+        Location.print_loc (loc x) s_kind pp_cmt x
+  | `Modified (x, y) -> (
+      Format.fprintf fs
+        "%!@{<loc>%a@}:@,\
+         @{<error>Error@}: formatting of %s is unstable.\n\
+        \  before: %a\n\
+        \   after: %a\n\
+         %!"
+        Location.print_loc (loc x) s_kind pp_cmt x pp_cmt y ;
+      match cmt_kind with
+      | `Comment -> ()
+      | `Doc_comment ->
+          Format.fprintf fs
+            "Please tighten up this comment in the source or disable the \
+             formatting using the option --no-parse-docstrings.\n\
+             %!" )
 
 type pos = Before | Within | After
 
-module Asterisk_prefixed = struct
-  let split {txt; loc= {Location.loc_start; _}} =
-    let len = Position.column loc_start + 3 in
-    let pat =
-      String.Search_pattern.create
-        (String.init len ~f:(function
-          | 0 -> '\n'
-          | n when n < len - 1 -> ' '
-          | _ -> '*' ) )
-    in
-    let rec split_ pos =
-      match String.Search_pattern.index pat ~pos ~in_:txt with
-      | Some 0 -> "" :: split_ len
-      | Some idx -> String.sub txt ~pos ~len:(idx - pos) :: split_ (idx + len)
-      | _ ->
-          let drop = function ' ' | '\t' -> true | _ -> false in
-          let line = String.rstrip ~drop (String.drop_prefix txt pos) in
-          if String.is_empty line then [" "]
-          else if Char.equal line.[String.length line - 1] '\n' then
-            [String.drop_suffix line 1; ""]
-          else if Char.is_whitespace txt.[String.length txt - 1] then
-            [line ^ " "]
-          else [line]
-    in
-    split_ 0
+type decoded_kind =
+  | Verbatim of string
+  | Doc of string
+  | Normal of string
+  | Code of string
+  | Asterisk_prefixed of string list
 
-  let fmt lines =
-    vbox 1
-      ( fmt "(*"
-      $ list_fl lines (fun ~first:_ ~last line ->
-            match line with
-            | "" when last -> fmt ")"
-            | _ -> str line $ fmt_or last "*)" "@,*" ) )
-end
+type decoded = {prefix: string; suffix: string; kind: decoded_kind}
 
-module Unwrapped = struct
-  let unindent_lines ~opn_pos first_line tl_lines =
-    let indent_of_line s =
-      (* index of first non-whitespace is indentation, None means white
-         line *)
-      String.lfindi s ~f:(fun _ c -> not (Char.is_whitespace c))
-    in
-    (* The indentation of the first line must account for the location of the
-       comment opening *)
-    let fl_spaces = Option.value ~default:0 (indent_of_line first_line) in
-    let fl_offset = opn_pos.Lexing.pos_cnum - opn_pos.pos_bol + 2 in
-    let fl_indent = fl_spaces + fl_offset in
-    let min_indent =
-      List.fold_left ~init:fl_indent
-        ~f:(fun acc s ->
-          Option.value_map ~default:acc ~f:(min acc) (indent_of_line s) )
-        tl_lines
-    in
-    (* Completely trim the first line *)
-    String.drop_prefix first_line fl_spaces
-    :: List.map ~f:(fun s -> String.drop_prefix s min_indent) tl_lines
+(** [~content_offset] indicates at which column the body of the comment
+    starts (1-indexed). [~max_idnent] indicates the maximum amount of
+    indentation to trim. *)
+let unindent_lines ?(max_indent = Stdlib.max_int) ~content_offset first_line
+    tl_lines =
+  let tl_indent =
+    List.fold_left ~init:max_indent
+      ~f:(fun acc s ->
+        Option.value_map ~default:acc ~f:(min acc) (String.indent_of_line s) )
+      tl_lines
+  in
+  (* The indentation of the first line must account for the location of the
+     comment opening. Don't account for the first line if it's empty.
+     [fl_trim] is the number of characters to remove from the first line. *)
+  let fl_trim, fl_indent =
+    match String.indent_of_line first_line with
+    | Some i ->
+        (max 0 (min i (tl_indent - content_offset)), i + content_offset - 1)
+    | None -> (String.length first_line, max_indent)
+  in
+  let min_indent = min tl_indent fl_indent in
+  let first_line = String.drop_prefix first_line fl_trim in
+  first_line
+  :: List.map ~f:(fun s -> String.drop_prefix s min_indent) tl_lines
 
-  let fmt_multiline_cmt ?epi ~opn_pos ~starts_with_sp first_line tl_lines =
-    let is_white_line s = String.for_all s ~f:Char.is_whitespace in
-    let unindented = unindent_lines ~opn_pos first_line tl_lines in
-    let fmt_line ~first ~last:_ s =
-      let sep, sp =
-        if is_white_line s then (str "\n", noop)
-        else (fmt "@;<1000 0>", fmt_if starts_with_sp " ")
-      in
-      fmt_if_k (not first) sep $ sp $ str (String.rstrip s)
-    in
-    vbox 0 ~name:"multiline" (list_fl unindented fmt_line $ fmt_opt epi)
+let unindent_lines ?max_indent ~content_offset txt =
+  match String.split ~on:'\n' txt with
+  | [] -> []
+  | hd :: tl -> unindent_lines ?max_indent ~content_offset hd tl
 
-  let fmt ~ocp_indent_compat {txt= s; loc} pos =
-    let is_sp = function ' ' | '\t' -> true | _ -> false in
-    match String.split_lines (String.rstrip s) with
-    | first_line :: (_ :: _ as tl) when not (String.is_empty first_line) ->
-        if ocp_indent_compat then
-          (* Not adding artificial breaks and keeping the comment contents
-             verbatim will not interfere with ocp-indent. *)
-          match pos with
-          | Before -> wrap "(*" "*)" @@ str s
-          | Within -> wrap "(*" "*)" @@ str s
-          | After -> break_unless_newline 1000 0 $ wrap "(*" "*)" @@ str s
-        else
-          let epi =
-            (* Preserve position of closing but strip empty lines at the
-               end *)
-            match String.rfindi s ~f:(fun _ c -> not (is_sp c)) with
-            | Some i when Char.( = ) s.[i] '\n' ->
-                break 1000 (-2) (* Break before closing *)
-            | Some i when i < String.length s - 1 ->
-                str " " (* Preserve a space at the end *)
-            | _ -> noop
-          in
-          (* Preserve the first level of indentation *)
-          let starts_with_sp = is_sp first_line.[0] in
-          wrap "(*" "*)"
-          @@ fmt_multiline_cmt ~opn_pos:loc.loc_start ~epi ~starts_with_sp
-               first_line tl
-    | _ -> wrap "(*" "*)" @@ str s
-end
+let is_all_whitespace s = String.for_all s ~f:Char.is_whitespace
 
-let fmt cmt ~wrap:wrap_comments ~ocp_indent_compat ~fmt_code pos =
-  let mode =
-    match cmt.txt with
-    | "" -> impossible "not produced by parser"
+let split_asterisk_prefixed =
+  let prefix = "*" in
+  let drop_prefix s = String.drop_prefix s (String.length prefix) in
+  let rec lines_are_asterisk_prefixed = function
+    | [] -> true
+    (* Allow the last line to be empty *)
+    | [last] when is_all_whitespace last -> true
+    | hd :: tl ->
+        String.is_prefix hd ~prefix && lines_are_asterisk_prefixed tl
+  in
+  function
+  (* Check whether the second line is not empty to avoid matching a comment
+     with no asterisks. *)
+  | fst_line :: (snd_line :: _ as tl)
+    when lines_are_asterisk_prefixed tl && not (is_all_whitespace snd_line)
+    ->
+      Some (fst_line :: List.map tl ~f:drop_prefix)
+  | _ -> None
+
+let mk ?(prefix = "") ?(suffix = "") kind = {prefix; suffix; kind}
+
+let decode_comment ~parse_comments_as_doc txt loc =
+  let txt =
+    (* Windows compatibility *)
+    let f = function '\r' -> false | _ -> true in
+    String.filter txt ~f
+  in
+  let opn_offset =
+    let {Lexing.pos_cnum; pos_bol; _} = loc.Location.loc_start in
+    pos_cnum - pos_bol + 1
+  in
+  if String.length txt >= 2 then
+    match txt.[0] with
+    | '$' when not (Char.is_whitespace txt.[1]) -> mk (Verbatim txt)
+    | '$' ->
+        let dollar_suf = Char.equal txt.[String.length txt - 1] '$' in
+        let suffix = if dollar_suf then "$" else "" in
+        let code =
+          let len = String.length txt - if dollar_suf then 2 else 1 in
+          String.sub ~pos:1 ~len txt
+        in
+        mk ~prefix:"$" ~suffix (Code code)
+    | '=' -> mk (Verbatim txt)
+    | _ when is_all_whitespace txt ->
+        mk (Verbatim " ") (* Make sure not to format to [(**)]. *)
+    | _ when parse_comments_as_doc -> mk (Doc txt)
+    | _ -> (
+        let lines =
+          let content_offset = opn_offset + 2 in
+          unindent_lines ~content_offset txt
+        in
+        match split_asterisk_prefixed lines with
+        | Some deprefixed_lines -> mk (Asterisk_prefixed deprefixed_lines)
+        | None -> mk (Normal txt) )
+  else
+    match txt with
     (* "(**)" is not parsed as a docstring but as a regular comment
        containing '*' and would be rewritten as "(***)" *)
-    | "*" when Location.width cmt.loc = 4 -> `Verbatim "(**)"
-    | "*" -> `Verbatim "(***)"
-    | "$" -> `Verbatim "(*$*)"
-    | str when Char.equal str.[0] '$' -> (
-        let dollar_suf = Char.equal str.[String.length str - 1] '$' in
-        let cls : Fmt.s = if dollar_suf then "$*)" else "*)" in
-        let len = String.length str - if dollar_suf then 2 else 1 in
-        let source = String.sub ~pos:1 ~len str in
-        match fmt_code source with
-        | Ok formatted -> `Code (formatted, cls)
-        | Error () -> `Unwrapped cmt )
-    | _ -> (
-      match Asterisk_prefixed.split cmt with
-      | [] | [""] -> impossible "not produced by split_asterisk_prefixed"
-      | [""; ""] -> `Verbatim "(* *)"
-      | [text] when wrap_comments -> `Wrapped (text, "*)")
-      | [text; ""] when wrap_comments -> `Wrapped (text, " *)")
-      | [_] | [_; ""] -> `Unwrapped cmt
-      | lines -> `Asterisk_prefixed lines )
-  in
-  match mode with
-  | `Verbatim x -> str x
-  | `Code (x, cls) -> hvbox 2 @@ wrap "(*$@;" cls (x $ fmt "@;<1 -2>")
-  | `Wrapped (x, epi) -> str "(*" $ fill_text x ~epi
-  | `Unwrapped x -> Unwrapped.fmt ~ocp_indent_compat x pos
-  | `Asterisk_prefixed x -> Asterisk_prefixed.fmt x
+    | "*" when Location.width loc = 4 -> mk (Verbatim "")
+    | ("*" | "$") as txt -> mk (Verbatim txt)
+    | "\n" | " " -> mk (Verbatim " ")
+    | _ -> mk (Normal txt)
+
+let decode_docstring _loc = function
+  | "" -> mk (Verbatim "")
+  | ("*" | "$") as txt -> mk (Verbatim txt)
+  | "\n" | " " -> mk (Verbatim " ")
+  | txt -> mk ~prefix:"*" (Doc txt)
+
+let decode ~parse_comments_as_doc = function
+  | Comment {txt; loc} -> decode_comment ~parse_comments_as_doc txt loc
+  | Docstring {txt; loc} -> decode_docstring loc txt

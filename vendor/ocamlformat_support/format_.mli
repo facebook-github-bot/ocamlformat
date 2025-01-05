@@ -42,10 +42,6 @@
 *)
 
 (** {1 Introduction}
-   For a gentle introduction to the basics of pretty-printing using
-   [Format], read
-   {{:http://caml.inria.fr/resources/doc/guides/format.en.html}
-    http://caml.inria.fr/resources/doc/guides/format.en.html}.
 
    You may consider this module as providing an extension to the
    [printf] facility to provide automatic line splitting. The addition of
@@ -104,8 +100,11 @@
     Format.print_string "TEXT";
    ]
    leads to output [<>PRETTYTEXT].
-
 *)
+
+(* A tutorial to the Format module is provided at {!Format_tutorial}. *)
+
+(** {1 Formatters} *)
 
 type formatter
 (** Abstract data corresponding to a pretty-printer (also called a
@@ -133,6 +132,10 @@ type formatter
   not rule the policy of inner boxes. For instance, if a vertical box is
   nested in an horizontal box, all break hints within the vertical box will
   split the line.
+
+  Moreover, opening a box after the {{!maxindent}maximum indentation limit}
+  splits the line whether or not the box would end up fitting on the line.
+
 *)
 
 val pp_open_box : formatter -> int -> unit
@@ -146,7 +149,8 @@ val open_box : int -> unit
    A break hint splits the line if there is no more room on the line to
    print the remainder of the box.
 
-   Within this box, the pretty-printer emphasizes the box structure: a break
+   Within this box, the pretty-printer emphasizes the box structure:
+   if a structural box does not fit fully on a simple line, a break
    hint also splits the line if the splitting ``moves to the left''
    (i.e. the new line gets an indentation smaller than the one of the current
    line).
@@ -216,6 +220,12 @@ val open_hovbox : int -> unit
 val pp_print_string : formatter -> string -> unit
 val print_string : string -> unit
 (** [pp_print_string ppf s] prints [s] in the current pretty-printing box. *)
+
+val pp_print_bytes : formatter -> bytes -> unit
+val print_bytes : bytes -> unit
+(** [pp_print_bytes ppf b] prints [b] in the current pretty-printing box.
+    @since 4.13.0
+*)
 
 val pp_print_as : formatter -> int -> string -> unit
 val print_as : int -> string -> unit
@@ -414,6 +424,8 @@ val set_margin : int -> unit
 (** [pp_set_margin ppf d] sets the right margin to [d] (in characters):
   the pretty-printer splits lines that overflow the right margin according to
   the break hints given.
+  Setting the margin to [d] means that the formatting engine aims at
+  printing at most [d-1] characters per line.
   Nothing happens if [d] is smaller than 2.
   If [d] is too large, the right margin is set to the maximum
   admissible value (which is greater than [10 ^ 9]).
@@ -429,7 +441,7 @@ val pp_get_margin : formatter -> unit -> int
 val get_margin : unit -> int
 (** Returns the position of the right margin. *)
 
-(** {1 Maximum indentation limit} *)
+(** {1:maxindent Maximum indentation limit} *)
 
 val pp_set_max_indent : formatter -> int -> unit
 val set_max_indent : int -> unit
@@ -455,6 +467,10 @@ val set_max_indent : int -> unit
   ["123456789"] and ["123456789A"] .
   Note also that vertical boxes never fit on a line whereas horizontal boxes
   always fully fit on the current line.
+  Opening a box may split a line whereas the contents may have fit.
+  If this behavior is problematic, it can be curtailed by setting the maximum
+  indentation limit to [margin - 1]. Note that setting the maximum indentation
+  limit to [margin] is invalid.
 
   Nothing happens if [d] is smaller than 2.
 
@@ -503,6 +519,19 @@ val safe_set_geometry : max_indent:int -> margin:int -> unit
 
    @since 4.08.0
 *)
+
+(**
+   [pp_update_geometry ppf (fun geo -> { geo with ... })] lets you
+   update a formatter's geometry in a way that is robust to extension
+   of the [geometry] record with new fields.
+
+   Raises an invalid argument exception if the returned geometry
+   does not satisfy {!check_geometry}.
+
+   @since 4.11.0
+*)
+val pp_update_geometry : formatter -> (geometry -> geometry) -> unit
+val update_geometry : (geometry -> geometry) -> unit
 
 val pp_get_geometry: formatter -> unit -> geometry
 val get_geometry: unit -> geometry
@@ -699,6 +728,8 @@ type stag += RGB of {r:int;g:int;b:int}
   Semantic tag operations may be set on or off with {!set_tags}.
   Tag-marking operations may be set on or off with {!set_mark_tags}.
   Tag-printing operations may be set on or off with {!set_print_tags}.
+
+  @since 4.08.0
 *)
 
 type tag = string
@@ -706,6 +737,8 @@ type stag += String_tag of tag
 (** [String_tag s] is a string tag [s]. String tags can be inserted either
     by explicitly using the constructor [String_tag] or by using the dedicated
     format syntax ["@{<s> ... @}"].
+
+    @since 4.08.0
 *)
 
 val pp_open_stag : formatter -> stag -> unit
@@ -715,6 +748,8 @@ val open_stag : stag -> unit
   The [print_open_stag] tag-printing function of the formatter is called with
   [t] as argument; then the opening tag marker for [t], as given by
   [mark_open_stag t], is written into the output device of the formatter.
+
+  @since 4.08.0
 *)
 
 val pp_close_stag : formatter -> unit -> unit
@@ -724,6 +759,8 @@ val close_stag : unit -> unit
   The closing tag marker, as given by [mark_close_stag t], is written into the
   output device of the formatter; then the [print_close_stag] tag-printing
   function of the formatter is called with [t] as argument.
+
+  @since 4.08.0
 *)
 
 val pp_set_tags : formatter -> bool -> unit
@@ -799,7 +836,7 @@ type formatter_out_functions = {
   out_flush : unit -> unit;
   out_newline : unit -> unit;
   out_spaces : int -> unit;
-  out_indent : int -> unit;
+  out_indent : int -> unit;(** @since 4.06.0 *)
 }
 (** The set of output functions specific to a formatter:
 - the [out_string] function performs all the pretty-printer string output.
@@ -867,6 +904,8 @@ type formatter_stag_functions = {
   those markers as 0 length tokens in the output device of the formatter.
   [print] versions are the 'tag-printing' functions that can perform
   regular printing when a tag is closed or opened.
+
+  @since 4.08.0
 *)
 
 val pp_set_formatter_stag_functions :
@@ -887,13 +926,17 @@ val set_formatter_stag_functions : formatter_stag_functions -> unit
   The [print_] field of the record contains the tag-printing functions that
   are called at tag opening and tag closing time, to output regular material
   in the pretty-printer queue.
+
+  @since 4.08.0
 *)
 
 val pp_get_formatter_stag_functions :
   formatter -> unit -> formatter_stag_functions
 val get_formatter_stag_functions : unit -> formatter_stag_functions
 (** Return the current semantic tag operation functions of the standard
-  pretty-printer. *)
+    pretty-printer.
+
+    @since 4.08.0 *)
 
 (** {1:formatter Defining formatters}
 
@@ -1076,6 +1119,19 @@ val pp_print_list:
   @since 4.02.0
 *)
 
+val pp_print_seq:
+  ?pp_sep:(formatter -> unit -> unit) ->
+  (formatter -> 'a -> unit) -> (formatter -> 'a Seq.t -> unit)
+(** [pp_print_seq ?pp_sep pp_v ppf s] prints items of sequence [s],
+  using [pp_v] to print each item, and calling [pp_sep]
+  between items ([pp_sep] defaults to {!pp_print_cut}.
+  Does nothing on empty sequences.
+
+  This function does not terminate on infinite sequences.
+
+  @since 4.12
+*)
+
 val pp_print_text : formatter -> string -> unit
 (** [pp_print_text ppf s] prints [s] with spaces and newlines respectively
   printed using {!pp_print_space} and {!pp_force_newline}.
@@ -1099,6 +1155,14 @@ val pp_print_result :
     [ok] if [r] is [Ok _] and [error] if [r] is [Error _].
 
     @since 4.08 *)
+
+val pp_print_either :
+  left:(formatter -> 'a -> unit) ->
+  right:(formatter -> 'b -> unit) -> formatter -> ('a, 'b) Either.t -> unit
+(** [pp_print_either ~left ~right ppf e] prints [e] on [ppf] using
+    [left] if [e] is [Either.Left _] and [right] if [e] is [Either.Right _].
+
+    @since 4.13 *)
 
 (** {1:fpp Formatted pretty-printing} *)
 
@@ -1219,6 +1283,36 @@ val asprintf : ('a, formatter, unit, string) format4 -> 'a
   @since 4.01.0
 *)
 
+val dprintf :
+  ('a, formatter, unit, formatter -> unit) format4 -> 'a
+(** Same as {!fprintf}, except the formatter is the last argument.
+  [dprintf "..." a b c] is a function of type
+  [formatter -> unit] which can be given to a format specifier [%t].
+
+  This can be used as a replacement for {!asprintf} to delay
+  formatting decisions. Using the string returned by {!asprintf} in a
+  formatting context forces formatting decisions to be taken in
+  isolation, and the final string may be created
+  prematurely. {!dprintf} allows delay of formatting decisions until
+  the final formatting context is known.
+  For example:
+{[
+  let t = Format.dprintf "%i@ %i@ %i" 1 2 3 in
+  ...
+  Format.printf "@[<v>%t@]" t
+]}
+
+  @since 4.08.0
+*)
+
+
+val ifprintf : formatter -> ('a, formatter, unit) format -> 'a
+(** Same as [fprintf] above, but does not print anything.
+  Useful to ignore some material when conditionally printing.
+
+  @since 3.10.0
+*)
+
 (** Formatted Pretty-Printing with continuations. *)
 
 val kfprintf :
@@ -1226,6 +1320,15 @@ val kfprintf :
   ('b, formatter, unit, 'a) format4 -> 'b
 (** Same as [fprintf] above, but instead of returning immediately,
   passes the formatter to its first argument at the end of printing. *)
+
+val kdprintf :
+  ((formatter -> unit) -> 'a) ->
+  ('b, formatter, unit, 'a) format4 -> 'b
+(** Same as {!dprintf} above, but instead of returning immediately,
+  passes the suspended printer to its first argument at the end of printing.
+
+  @since 4.08.0
+*)
 
 val ikfprintf :
   (formatter -> 'a) -> formatter ->

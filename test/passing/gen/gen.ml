@@ -1,11 +1,18 @@
+(** Generates Dune rules for running the tests. The [tests/] directory contains
+    the source files for the tests. The output of the tests is promoted to the
+    corresponding [refs.*/] directory for each profiles. *)
+
+let input_dir = "../tests/"
+
 module StringMap = Map.Make (String)
 
+let spf = Printf.sprintf
+
+let dep fname = spf "%%{dep:%s}" fname
+
 type setup =
-  { mutable has_ref: bool
-  ; mutable has_opts: bool
-  ; mutable has_ocp: bool
+  { mutable has_opts: bool
   ; mutable base_file: string option
-  ; mutable extra_deps: string list
   ; mutable should_fail: bool
   ; mutable enabled_if: string option }
 
@@ -35,22 +42,17 @@ let read_file file =
 
 let add_test ?base_file map src_test_name =
   let s =
-    { has_ref= false
-    ; has_opts= false
-    ; has_ocp= false
-    ; base_file
-    ; extra_deps= []
-    ; should_fail= false
-    ; enabled_if= None }
+    {has_opts= false; base_file; should_fail= false; enabled_if= None}
   in
   map := StringMap.add src_test_name s !map ;
   s
 
 let register_file tests fname =
   match String.split_on_char '.' fname with
-  | test_name :: (("ml" | "mli" | "mlt" | "eliom" | "eliomi") as ext) :: rest
-    -> (
-      let fname = "tests/" ^ fname in
+  | test_name
+    :: (("ml" | "mli" | "mlt" | "mld" | "eliom" | "eliomi") as ext)
+    :: rest -> (
+      let fname = input_dir ^ fname in
       let src_test_name = test_name ^ "." ^ ext in
       let setup =
         match StringMap.find src_test_name !tests with
@@ -65,13 +67,11 @@ let register_file tests fname =
       in
       match rest with
       | [] -> ()
-      | ["output"] | ["ocp"; "output"] -> ()
+      | ["output"] -> ()
       | ["opts"] -> setup.has_opts <- true
-      | ["ref"] -> setup.has_ref <- true
-      | ["ocp"] -> setup.has_ocp <- true
-      | ["deps"] -> setup.extra_deps <- read_lines fname
       | ["should-fail"] -> setup.should_fail <- true
       | ["enabled-if"] -> setup.enabled_if <- Some (read_file fname)
+      | ["err"] -> ()
       | _ -> invalid_arg fname )
   | _ -> ()
 
@@ -80,70 +80,56 @@ let register_file tests fname =
 let cmd should_fail args =
   let cmd_string = String.concat " " args in
   if should_fail then
-    Printf.sprintf
-      {|(with-accepted-exit-codes 1
-       (run %s))|}
-      cmd_string
-  else Printf.sprintf {|(run %s)|} cmd_string
+    spf {|(with-accepted-exit-codes 1
+       (run %s))|} cmd_string
+  else spf {|(run %s)|} cmd_string
 
 let emit_test test_name setup =
   let opts =
-    if setup.has_opts then
-      read_lines (Printf.sprintf "tests/%s.opts" test_name)
-    else []
+    (* Pass a relative file name to [--name] so that the right config is
+       picked in [refs.*/.ocamlformat], this is not the input path. *)
+    "--name" :: test_name :: "--margin-check"
+    ::
+    ( if setup.has_opts then read_lines (spf "%s/%s.opts" input_dir test_name)
+      else [] )
   in
-  let ref_name =
-    "tests/" ^ if setup.has_ref then test_name ^ ".ref" else test_name
-  in
+  let ref_file ext = test_name ^ ext in
   let base_test_name =
-    "tests/" ^ match setup.base_file with Some n -> n | None -> test_name
+    input_dir ^ match setup.base_file with Some n -> n | None -> test_name
   in
-  let extra_deps = String.concat " " setup.extra_deps in
   let enabled_if_line =
     match setup.enabled_if with
     | None -> ""
-    | Some clause -> Printf.sprintf "\n (enabled_if %s)" clause
+    | Some clause -> spf "\n (enabled_if %s)" clause
   in
+  let output_fname = ref_file ".stdout" in
   Printf.printf
     {|
 (rule
- (deps tests/.ocamlformat %s)%s
+ (deps .ocamlformat)%s
  (package ocamlformat)
  (action
-   (with-outputs-to %s.output
-     %s)))
+  (with-stdout-to %s
+   (with-stderr-to %s.stderr
+     %s))))
 
 (rule
  (alias runtest)%s
  (package ocamlformat)
- (action (diff %s %s.output)))
+ (action (diff %s %s.stdout)))
+
+(rule
+ (alias runtest)%s
+ (package ocamlformat)
+ (action (diff %s %s.stderr)))
 |}
-    extra_deps enabled_if_line test_name
+    enabled_if_line output_fname test_name
     (cmd setup.should_fail
-       ( ["%{bin:ocamlformat}"] @ opts
-       @ [Printf.sprintf "%%{dep:%s}" base_test_name] ) )
-    enabled_if_line ref_name test_name ;
-  if setup.has_ocp then
-    Printf.printf
-      {|
-(rule
- (deps tests/.ocp-indent %s)%s
- (package ocamlformat)
- (action
-   (with-outputs-to %s.ocp.output
-     %s)))
-
-(rule
- (alias runtest)%s
- (package ocamlformat)
- (action (diff tests/%s.ocp %s.ocp.output)))
-|}
-      extra_deps enabled_if_line test_name
-      (cmd setup.should_fail
-         ["%{bin:ocp-indent}"; Printf.sprintf "%%{dep:%s}" ref_name] )
-      enabled_if_line test_name test_name
+       (["%{bin:ocamlformat}"] @ opts @ [dep base_test_name]) )
+    enabled_if_line (ref_file ".ref") test_name enabled_if_line
+    (ref_file ".err") test_name
 
 let () =
   let map = ref StringMap.empty in
-  Sys.readdir "./tests" |> Array.iter (register_file map) ;
+  Sys.readdir input_dir |> Array.iter (register_file map) ;
   StringMap.iter emit_test !map

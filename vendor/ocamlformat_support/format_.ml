@@ -42,6 +42,8 @@ end  = struct
   let is_known n = n >= 0
 end
 
+
+
 (* The pretty-printing boxes definition:
    a pretty-printing box is either
    - hbox: horizontal box (no line splitting)
@@ -60,18 +62,15 @@ type box_type = CamlinternalFormatBasics.block_type =
   | Pp_hbox | Pp_vbox | Pp_hvbox | Pp_hovbox | Pp_box | Pp_fits
 
 
-type fits_or_breaks = {
-  fits: string * int * string;   (* when the line is not split *)
-  breaks: string * int * string; (* when the line is split *)
-}
-
-
 (* The pretty-printing tokens definition:
    are either text to print or pretty printing
    elements that drive indentation and line splitting. *)
 type pp_token =
   | Pp_text of string          (* normal text *)
-  | Pp_break of fits_or_breaks (* complete break *)
+  | Pp_break of {              (* complete break *)
+      fits: string * int * string;   (* line is not split *)
+      breaks: string * int * string; (* line is split *)
+    }
   | Pp_tbreak of int * int     (* go to next tabulation *)
   | Pp_stab                    (* set a tabulation *)
   | Pp_begin of int * box_type (* beginning of a box *)
@@ -281,7 +280,7 @@ let break_new_line state (before, offset, after) width =
   state.pp_is_new_line <- true;
   let indent = state.pp_margin - width + offset in
   (* Don't indent more than pp_max_indent. *)
-  let real_indent = min state.pp_max_indent indent in
+  let real_indent = Int.min state.pp_max_indent indent in
   state.pp_current_indent <- real_indent;
   state.pp_space_left <- state.pp_margin - state.pp_current_indent;
   pp_output_indent state state.pp_current_indent;
@@ -685,6 +684,8 @@ let pp_print_as state isize s =
 let pp_print_string state s =
   pp_print_as state (String.length s) s
 
+let pp_print_bytes state s =
+  pp_print_as state (Bytes.length s) (Bytes.to_string s)
 
 (* To format an integer. *)
 let pp_print_int state i = pp_print_string state (Int.to_string i)
@@ -736,7 +737,7 @@ let pp_print_if_newline state () =
       { size = Size.zero; token = Pp_if_newline; length = 0 }
 
 
-(* Generalized break hint that allows to print strings before/after
+(* Generalized break hint that allows printing strings before/after
    same-line offset (width) or new-line offset *)
 let pp_print_custom_break state ~fits ~breaks =
   let before, width, after = fits in
@@ -884,7 +885,7 @@ let pp_set_margin state n =
       (* If possible maintain pp_min_space_left to its actual value,
          if this leads to a too small max_indent, take half of the
          new margin, if it is greater than 1. *)
-       max (max (state.pp_margin - state.pp_min_space_left)
+       Int.max (Int.max (state.pp_margin - state.pp_min_space_left)
                 (state.pp_margin / 2)) 1 in
     (* Rebuild invariants. *)
     pp_set_max_indent state new_max_indent
@@ -893,28 +894,47 @@ let pp_set_margin state n =
 (** Geometry functions and types *)
 type geometry = { max_indent:int; margin: int}
 
+let validate_geometry {margin; max_indent} =
+  if max_indent < 2 then
+    Error "max_indent < 2"
+  else if margin <= max_indent then
+    Error "margin <= max_indent"
+  else Ok ()
+
 let check_geometry geometry =
-  geometry.max_indent > 1
-  &&  geometry.margin > geometry.max_indent
+  match validate_geometry geometry with
+  | Ok () -> true
+  | Error _ -> false
 
 let pp_get_margin state () = state.pp_margin
 
+let pp_set_full_geometry state {margin; max_indent} =
+  pp_set_margin state margin;
+  pp_set_max_indent state max_indent;
+  ()
+
 let pp_set_geometry state ~max_indent ~margin =
-  if max_indent < 2 then
-    raise (Invalid_argument "Format.pp_set_geometry: max_indent < 2")
-  else if margin <= max_indent then
-      raise (Invalid_argument "Format.pp_set_geometry: margin <= max_indent")
-  else
-    pp_set_margin state margin; pp_set_max_indent state max_indent
+  let geometry = { max_indent; margin } in
+  match validate_geometry geometry with
+  | Error msg ->
+    raise (Invalid_argument ("Format.pp_set_geometry: " ^ msg))
+  | Ok () ->
+    pp_set_full_geometry state geometry
 
 let pp_safe_set_geometry state ~max_indent ~margin =
-  if check_geometry {max_indent;margin} then
-    pp_set_geometry state ~max_indent ~margin
-  else
-    ()
+  let geometry = { max_indent; margin } in
+  match validate_geometry geometry with
+  | Error _msg ->
+     ()
+  | Ok () ->
+    pp_set_full_geometry state geometry
 
 let pp_get_geometry state () =
   { margin = pp_get_margin state (); max_indent = pp_get_max_indent state () }
+
+let pp_update_geometry state update =
+  let geometry = pp_get_geometry state () in
+  pp_set_full_geometry state (update geometry)
 
 (* Setting a formatter basic output functions. *)
 let pp_set_formatter_out_functions state {
@@ -1173,6 +1193,7 @@ and open_stag = pp_open_stag std_formatter
 and close_stag = pp_close_stag std_formatter
 and print_as = pp_print_as std_formatter
 and print_string = pp_print_string std_formatter
+and print_bytes = pp_print_bytes std_formatter
 and print_int = pp_print_int std_formatter
 and print_float = pp_print_float std_formatter
 and print_char = pp_print_char std_formatter
@@ -1201,6 +1222,7 @@ and get_max_indent = pp_get_max_indent std_formatter
 and set_geometry = pp_set_geometry std_formatter
 and safe_set_geometry = pp_safe_set_geometry std_formatter
 and get_geometry = pp_get_geometry std_formatter
+and update_geometry = pp_update_geometry std_formatter
 
 and set_max_boxes = pp_set_max_boxes std_formatter
 and get_max_boxes = pp_get_max_boxes std_formatter
@@ -1249,6 +1271,22 @@ let rec pp_print_list ?(pp_sep = pp_print_cut) pp_v ppf = function
     pp_sep ppf ();
     pp_print_list ~pp_sep pp_v ppf vs
 
+(* To format a sequence *)
+let rec pp_print_seq_in ~pp_sep pp_v ppf seq =
+  match seq () with
+  | Seq.Nil -> ()
+  | Seq.Cons (v, seq) ->
+    pp_sep ppf ();
+    pp_v ppf v;
+    pp_print_seq_in ~pp_sep pp_v ppf seq
+
+let pp_print_seq ?(pp_sep = pp_print_cut) pp_v ppf seq =
+  match seq () with
+  | Seq.Nil -> ()
+  | Seq.Cons (v, seq) ->
+    pp_v ppf v;
+    pp_print_seq_in ~pp_sep pp_v ppf seq
+
 (* To format free-flowing text *)
 let pp_print_text ppf s =
   let len = String.length s in
@@ -1278,6 +1316,10 @@ let pp_print_option ?(none = fun _ () -> ()) pp_v ppf = function
 let pp_print_result ~ok ~error ppf = function
 | Ok v -> ok ppf v
 | Error e -> error ppf e
+
+let pp_print_either ~left ~right ppf = function
+| Either.Left l -> left ppf l
+| Either.Right r -> right ppf r
 
  (**************************************************************)
 
@@ -1394,9 +1436,19 @@ let kfprintf k ppf (Format (fmt, _)) =
 and ikfprintf k ppf (Format (fmt, _)) =
   make_iprintf k ppf fmt
 
+let ifprintf _ppf (Format (fmt, _)) =
+  make_iprintf ignore () fmt
+
 let fprintf ppf = kfprintf ignore ppf
 let printf fmt = fprintf std_formatter fmt
 let eprintf fmt = fprintf err_formatter fmt
+
+let kdprintf k (Format (fmt, _)) =
+  make_printf
+    (fun acc -> k (fun ppf -> output_acc ppf acc))
+    End_of_acc fmt
+
+let dprintf fmt = kdprintf (fun i -> i) fmt
 
 let ksprintf k (Format (fmt, _)) =
   let b = pp_make_buffer () in

@@ -16,3 +16,12 @@ type t =
   | Core_type
   | Module_type
   | Expression
+  | Repl_file
+  | Documentation
+
+let of_fname fname =
+  match Filename.extension fname with
+  | ".ml" | ".mlt" | ".eliom" -> Some Use_file
+  | ".mli" | ".eliomi" -> Some Signature
+  | ".mld" -> Some Documentation
+  | _ -> None

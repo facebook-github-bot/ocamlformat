@@ -249,23 +249,38 @@ let get_nullability = function
   (* This is a very special case, assigning non-null is a technical trick *) ->
       Nullability.Nonnull
 
-[@@@ocamlformat "exp-grouping=preserve"]
+let _ =
+  try
+    ()
+  with _ ->
+    (match () with _ -> ())
 
 let _ =
-  match x with
-  | A -> begin
-    match B with
-    | A -> fooooooooooooo
-  end
-  | A -> begin
-    match B with
-    | A -> fooooooooooooo
-    | B -> fooooooooooooo
-  end
-  | A -> begin
-    match B with
-    | A -> fooooooooooooo
-    | B -> fooooooooooooo
-    | C -> fooooooooooooo
-    | D -> fooooooooooooo
-  end
+  let _ =
+    try () with _ ->
+    try () with _ -> () in
+  ()
+
+let _ = function
+  | _ -> (
+      x >>= function
+      | `Halt -> return x)
+  | _ -> ()
+
+let _ =
+  let _ = function
+    | _ -> (
+        x >>= function
+        | `Halt -> return x)
+    | _ -> ()
+  in
+  ()
+
+class c =
+  let _ = function
+    | _ -> (
+        x >>= function
+        | `Halt -> return x)
+    | _ -> ()
+  in
+  object end
